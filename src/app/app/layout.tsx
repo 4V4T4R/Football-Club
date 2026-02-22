@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import PageBg from "@/components/PageBg";
 
 type Club = { id: string; name: string; slug: string };
 
@@ -46,6 +47,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <PageBg image="/assets/auth-bg.jpg">
     <div className="min-h-screen">
       {/* SHELL: nota che non c'è più topbar duplice (usiamo il header pubblico) */}
       <div className="mx-auto w-full max-w-7xl px-4 grid gap-6 md:grid-cols-[210px_1fr]">
@@ -77,5 +79,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="min-w-0">{children}</main>
       </div>
     </div>
+    </PageBg>
   );
 }
