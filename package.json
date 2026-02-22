@@ -30,6 +30,7 @@
     "typescript": "^5"
   },
   "volta": {
-    "node": "20.20.0"
+    "node": "20.20.0",
+    "engines": { "node": "20.x" }
   }
 }
