@@ -234,7 +234,7 @@ export default function EventDetailPage() {
           </button>
 
           <p className="mt-3 text-xs text-muted-theme">
-            Prossimo step: risposta Presente/Assente + motivo + allegato.
+            Risposta Presente/Assente + motivo + allegato, da perfezionare avvisi di conferma.
           </p>
         </div>
       </div>

@@ -318,7 +318,7 @@ export default function EventResponsesPage() {
 
       <div className="card p-6">
         <p className="text-sm text-muted-theme">
-          Prossimo step: allegato (certificato/giustificazione) + email automatica.
+          Prossimo step: allegato (certificato/giustificazione) con invio email automatica allo staff.
         </p>
       </div>
     </div>
