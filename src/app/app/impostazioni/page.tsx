@@ -616,8 +616,7 @@ export default function Page() {
             </ul>
 
             <p className="mt-4 text-xs text-muted-theme">
-              Nota: per “Gestione membri” conviene usare sempre “disattiva” invece di cancellare,
-              come hai fatto coi giocatori.
+              Nota per Raffaele: dopo quasi un mese questo è già una base semifunzionante, ci vorra del tempo per perfezionarla 🥲.
             </p>
           </div>
         </div>
