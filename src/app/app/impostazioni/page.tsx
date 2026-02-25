@@ -54,12 +54,14 @@ function fmtDateTimeIT(iso: string | null | undefined) {
   }).format(d);
 }
 
-function roleLabel(r: string | null) {
-  if (!r) return "—";
-  if (r === "admin") return "Admin";
-  if (r === "staff") return "Staff";
-  if (r === "viewer") return "Viewer";
-  return r;
+/** ✅ se è un giocatore, mostriamo "Giocatore" (in futuro: ruolo di campo) */
+function roleLabel(memberRole: string | null, isPlayer: boolean) {
+  if (isPlayer) return "Giocatore";
+  if (!memberRole) return "—";
+  if (memberRole === "admin") return "Admin";
+  if (memberRole === "staff") return "Staff";
+  if (memberRole === "viewer") return "Viewer";
+  return memberRole;
 }
 
 export default function Page() {
@@ -178,9 +180,7 @@ export default function Page() {
 
     const { data: p, error: pErr } = await supabase
       .from("players")
-      .select(
-        "id, club_id, first_name, last_name, birth_date, shirt_number, user_id, active, created_at"
-      )
+      .select("id, club_id, first_name, last_name, birth_date, shirt_number, user_id, active, created_at")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -254,9 +254,6 @@ export default function Page() {
     // messaggi password SOLO nel box password
     setPwdError(null);
     setPwdOk(null);
-
-    // NON tocchiamo i messaggi globali qui
-    // setError(null); setOk(null);
 
     const { data: session } = await supabase.auth.getSession();
     const email = session.session?.user?.email;
@@ -365,260 +362,261 @@ export default function Page() {
         <h1 className="text-2xl font-semibold text-base-theme">Impostazioni</h1>
         <p className="mt-3 text-muted-theme">Account e preferenze.</p>
 
-        {/* messaggi globali (NO password) */}
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
         {ok && <p className="mt-4 text-sm text-emerald-600">{ok}</p>}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="space-y-6">
-          {/* PROFILO */}
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
-            <p className="mt-1 text-sm text-muted-theme">
-              {isStaffOrAdmin
-                ? "Puoi modificare nome e cognome (solo staff/admin)."
-                : "Nome e cognome modificabili solo dallo staff."}
-            </p>
+      {/* RIGA 1 (desktop): PROFILO | SQUADRA */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* PROFILO */}
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
+          <p className="mt-1 text-sm text-muted-theme">
+            {isStaffOrAdmin
+              ? "Puoi modificare nome e cognome (solo staff/admin)."
+              : "Nome e cognome modificabili solo dallo staff."}
+          </p>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">Nome</label>
-                <input
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  value={editFirst}
-                  onChange={(e) => setEditFirst(e.target.value)}
-                  disabled={!isStaffOrAdmin}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">Cognome</label>
-                <input
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  value={editLast}
-                  onChange={(e) => setEditLast(e.target.value)}
-                  disabled={!isStaffOrAdmin}
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs text-muted-theme">Email</label>
-                <input
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm opacity-80"
-                  value={authEmail ?? userRow?.email ?? ""}
-                  readOnly
-                />
-              </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-theme">Nome</label>
+              <input
+                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                value={editFirst}
+                onChange={(e) => setEditFirst(e.target.value)}
+                disabled={!isStaffOrAdmin}
+              />
             </div>
 
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-                onClick={saveProfile}
-                disabled={!canSaveProfile || savingProfile}
-                style={{ opacity: !canSaveProfile || savingProfile ? 0.6 : 1 }}
-              >
-                {savingProfile ? "Salvataggio..." : "Salva profilo"}
-              </button>
+            <div>
+              <label className="mb-1 block text-xs text-muted-theme">Cognome</label>
+              <input
+                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                value={editLast}
+                onChange={(e) => setEditLast(e.target.value)}
+                disabled={!isStaffOrAdmin}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs text-muted-theme">Email</label>
+              <input
+                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm opacity-80"
+                value={authEmail ?? userRow?.email ?? ""}
+                readOnly
+              />
             </div>
           </div>
 
-          {/* SQUADRA */}
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-base-theme">Squadra</h2>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+              onClick={saveProfile}
+              disabled={!canSaveProfile || savingProfile}
+              style={{ opacity: !canSaveProfile || savingProfile ? 0.6 : 1 }}
+            >
+              {savingProfile ? "Salvataggio..." : "Salva profilo"}
+            </button>
+          </div>
+        </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <div className="text-xs text-muted-theme">Squadra</div>
-                <div className="mt-1 text-base-theme font-medium">{club?.name ?? "—"}</div>
-                <div className="mt-1 text-xs text-muted-theme">{club?.slug ?? ""}</div>
-              </div>
+        {/* SQUADRA */}
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold text-base-theme">Squadra</h2>
 
-              <div>
-                <div className="text-xs text-muted-theme">Ruolo</div>
-                <div className="mt-1 text-base-theme font-medium">
-                  {roleLabel(member?.role ?? null)}
-                </div>
-                <div className="mt-1 text-xs text-muted-theme">
-                  Attivo dal {fmtDateTimeIT(member?.created_at ?? null)}
-                </div>
-              </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="text-xs text-muted-theme">Squadra</div>
+              <div className="mt-1 text-base-theme font-medium">{club?.name ?? "—"}</div>
+            </div>
 
-              <div>
-                <div className="text-xs text-muted-theme">Sei anche giocatore?</div>
-                <div className="mt-1 text-base-theme font-medium">{player ? "Sì" : "No"}</div>
-                {player && (
-                  <div className="mt-1 text-xs text-muted-theme">
-                    Nascita: {fmtDateIT(player.birth_date)} • Maglia: {player.shirt_number ?? "—"} •{" "}
-                    {player.active ? "Attivo" : "Non attivo"}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="text-xs text-muted-theme">Account creato</div>
-                <div className="mt-1 text-base-theme font-medium">
-                  {fmtDateTimeIT(userRow?.created_at ?? null)}
-                </div>
+            <div>
+              <div className="text-xs text-muted-theme">Ruolo</div>
+              <div className="mt-1 text-base-theme font-medium">
+                {roleLabel(member?.role ?? null, !!player)}
               </div>
             </div>
-          </div>
 
-          {/* PASSWORD */}
-          <div className="card p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-base-theme">Password</h2>
-                <p className="mt-1 text-sm text-muted-theme">
-                  Per sicurezza richiediamo la password attuale.
-                </p>
-              </div>
-
-              {isLocked && (
-                <div className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-xs text-muted-theme">
-                  Bloccato: {formatSecondsLeft(lockLeft)}
+            <div>
+              <div className="text-xs text-muted-theme">Sei anche giocatore?</div>
+              <div className="mt-1 text-base-theme font-medium">{player ? "Sì" : "No"}</div>
+              {player && (
+                <div>
+                  <div className="mt-1 text-xs text-muted-theme">Nascita:</div>
+                  <div className="mt-1 text-base-theme font-medium">{fmtDateIT(player.birth_date)}</div>
+                  <div className="mt-1 text-xs text-muted-theme">Maglia:</div>
+                  <div className="mt-1 text-base-theme font-medium">{player.shirt_number ?? "—"}</div>                  
                 </div>
               )}
             </div>
 
-            {/* ✅ messaggi password QUI */}
-            {pwdError && <p className="mt-3 text-sm text-rose-500">{pwdError}</p>}
-            {pwdOk && <p className="mt-3 text-sm text-emerald-500">{pwdOk}</p>}
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs text-muted-theme">Password attuale</label>
-                <div className="flex gap-2">
-                  <input
-                    type={showOld ? "text" : "password"}
-                    className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                    value={oldPwd}
-                    onChange={(e) => setOldPwd(e.target.value)}
-                    placeholder="Inserisci la password attuale"
-                    disabled={savingPwd || isLocked}
-                  />
-                  <button
-                    type="button"
-                    className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                    onClick={() => setShowOld((v) => !v)}
-                    disabled={savingPwd}
-                    title={showOld ? "Nascondi" : "Mostra"}
-                  >
-                    {showOld ? "🙈" : "👁️"}
-                  </button>
-                </div>
+            <div>
+              <div className="text-xs text-muted-theme">Account creato</div>
+              <div className="mt-1 text-base-theme font-medium">
+                {fmtDateTimeIT(userRow?.created_at ?? null)}
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">Nuova password</label>
-                <div className="flex gap-2">
-                  <input
-                    type={showNew ? "text" : "password"}
-                    className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                    value={pwd1}
-                    onChange={(e) => setPwd1(e.target.value)}
-                    placeholder="Minimo 8 caratteri"
-                    disabled={savingPwd || isLocked}
-                  />
-                  <button
-                    type="button"
-                    className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                    onClick={() => setShowNew((v) => !v)}
-                    disabled={savingPwd}
-                    title={showNew ? "Nascondi" : "Mostra"}
-                  >
-                    {showNew ? "🙈" : "👁️"}
-                  </button>
-                </div>
-
-                <div className="mt-2 rounded-md border border-theme bg-panel-theme px-3 py-2">
-                  <div className="flex items-center justify-between text-xs text-muted-theme">
-                    <span>
-                      Sicurezza: <b className="text-base-theme">{passwordLabel(score)}</b>
-                    </span>
-                    <span>{score}/5</span>
-                  </div>
-                  <div className="mt-2 h-2 w-full rounded bg-black/20 overflow-hidden">
-                    <div
-                      className="h-2 rounded bg-emerald-500"
-                      style={{ width: `${(score / 5) * 100}%` }}
-                    />
-                  </div>
-                  <div className="mt-2 text-[11px] text-muted-theme">
-                    Suggerimento: usa maiuscole, numeri e simboli.
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">Conferma password</label>
-                <div className="flex gap-2">
-                  <input
-                    type={showConfirm ? "text" : "password"}
-                    className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                    value={pwd2}
-                    onChange={(e) => setPwd2(e.target.value)}
-                    placeholder="Ripeti password"
-                    disabled={savingPwd || isLocked}
-                  />
-                  <button
-                    type="button"
-                    className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                    onClick={() => setShowConfirm((v) => !v)}
-                    disabled={savingPwd}
-                    title={showConfirm ? "Nascondi" : "Mostra"}
-                  >
-                    {showConfirm ? "🙈" : "👁️"}
-                  </button>
-                </div>
-
-                {pwd2 && pwd1 !== pwd2 && (
-                  <div className="mt-2 text-xs text-rose-500">Le password non coincidono.</div>
-                )}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="mt-4 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-              onClick={changePassword}
-              disabled={!canSavePwd || savingPwd}
-              style={{ opacity: canSavePwd && !savingPwd ? 1 : 0.6 }}
-            >
-              {savingPwd ? "Aggiornamento..." : "Aggiorna password"}
-            </button>
-
-            <div className="mt-4">
-              <button
-                type="button"
-                className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-                onClick={sendResetEmail}
-                disabled={sendingReset}
-                style={{ opacity: sendingReset ? 0.6 : 1 }}
-              >
-                {sendingReset ? "Invio..." : "Ho dimenticato la password (email reset)"}
-              </button>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* SIDEBAR */}
-        <div className="space-y-6">
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-base-theme">In arrivo</h2>
-            <ul className="mt-3 space-y-2 text-sm text-muted-theme">
-              <li>• Notifiche (solo admin per regole globali)</li>
-              <li>• Privacy (consensi, export dati, gestione allegati)</li>
-              <li>• Gestione membri (aggiungi staff, disattiva/gestisci giocatori)</li>
-              <li>• Tema app (solo admin)</li>
-            </ul>
+      {/* RIGA 2 (desktop): PASSWORD | IN ARRIVO */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* PASSWORD */}
+        <div className="card p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-base-theme">Password</h2>
+              <p className="mt-1 text-sm text-muted-theme">
+                Per sicurezza richiediamo la password attuale.
+              </p>
+            </div>
 
-            <p className="mt-4 text-xs text-muted-theme">
-              Nota per Raffaele: dopo quasi un mese questo è già una base semifunzionante, ci vorra del tempo per perfezionarla 🥲.
-            </p>
+            {isLocked && (
+              <div className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-xs text-muted-theme">
+                Bloccato: {formatSecondsLeft(lockLeft)}
+              </div>
+            )}
           </div>
+
+          {pwdError && <p className="mt-3 text-sm text-rose-500">{pwdError}</p>}
+          {pwdOk && <p className="mt-3 text-sm text-emerald-500">{pwdOk}</p>}
+
+          {/* ✅ input lunghi uguali: rendiamo i due campi sotto in colonna su desktop */}
+          <div className="mt-4 space-y-3">
+            {/* Password attuale */}
+            <div>
+              <label className="mb-1 block text-xs text-muted-theme">Password attuale</label>
+              <div className="flex gap-2">
+                <input
+                  type={showOld ? "text" : "password"}
+                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                  value={oldPwd}
+                  onChange={(e) => setOldPwd(e.target.value)}
+                  placeholder="Inserisci la password attuale"
+                  disabled={savingPwd || isLocked}
+                />
+                <button
+                  type="button"
+                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                  onClick={() => setShowOld((v) => !v)}
+                  disabled={savingPwd}
+                  title={showOld ? "Nascondi" : "Mostra"}
+                >
+                  {showOld ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
+
+            {/* Nuova password */}
+            <div>
+              <label className="mb-1 block text-xs text-muted-theme">Nuova password</label>
+              <div className="flex gap-2">
+                <input
+                  type={showNew ? "text" : "password"}
+                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                  value={pwd1}
+                  onChange={(e) => setPwd1(e.target.value)}
+                  placeholder="Minimo 8 caratteri"
+                  disabled={savingPwd || isLocked}
+                />
+                <button
+                  type="button"
+                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                  onClick={() => setShowNew((v) => !v)}
+                  disabled={savingPwd}
+                  title={showNew ? "Nascondi" : "Mostra"}
+                >
+                  {showNew ? "🙈" : "👁️"}
+                </button>
+              </div>
+
+              <div className="mt-2 rounded-md border border-theme bg-panel-theme px-3 py-2">
+                <div className="flex items-center justify-between text-xs text-muted-theme">
+                  <span>
+                    Sicurezza: <b className="text-base-theme">{passwordLabel(score)}</b>
+                  </span>
+                  <span>{score}/5</span>
+                </div>
+                <div className="mt-2 h-2 w-full rounded bg-black/20 overflow-hidden">
+                  <div
+                    className="h-2 rounded bg-emerald-500"
+                    style={{ width: `${(score / 5) * 100}%` }}
+                  />
+                </div>
+                <div className="mt-2 text-[11px] text-muted-theme">
+                  Suggerimento: usa maiuscole, numeri e simboli.
+                </div>
+              </div>
+            </div>
+
+            {/* Conferma password */}
+            <div>
+              <label className="mb-1 block text-xs text-muted-theme">Conferma password</label>
+              <div className="flex gap-2">
+                <input
+                  type={showConfirm ? "text" : "password"}
+                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                  value={pwd2}
+                  onChange={(e) => setPwd2(e.target.value)}
+                  placeholder="Ripeti password"
+                  disabled={savingPwd || isLocked}
+                />
+                <button
+                  type="button"
+                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  disabled={savingPwd}
+                  title={showConfirm ? "Nascondi" : "Mostra"}
+                >
+                  {showConfirm ? "🙈" : "👁️"}
+                </button>
+              </div>
+
+              {pwd2 && pwd1 !== pwd2 && (
+                <div className="mt-2 text-xs text-rose-500">Le password non coincidono.</div>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="mt-4 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+            onClick={changePassword}
+            disabled={!canSavePwd || savingPwd}
+            style={{ opacity: canSavePwd && !savingPwd ? 1 : 0.6 }}
+          >
+            {savingPwd ? "Aggiornamento..." : "Aggiorna password"}
+          </button>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+              onClick={sendResetEmail}
+              disabled={sendingReset}
+              style={{ opacity: sendingReset ? 0.6 : 1 }}
+            >
+              {sendingReset ? "Invio..." : "Ho dimenticato la password (email reset)"}
+            </button>
+          </div>
+        </div>
+
+        {/* IN ARRIVO */}
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold text-base-theme">In arrivo</h2>
+          <ul className="mt-3 space-y-2 text-sm text-muted-theme">
+            <li>• Notifiche (solo admin per regole globali)</li>
+            <li>• Privacy (consensi, export dati, gestione allegati)</li>
+            <li>• Gestione membri (aggiungi staff, disattiva/gestisci giocatori)</li>
+            <li>• Tema app (solo admin)</li>
+          </ul>
+
+          <p className="mt-4 text-xs text-muted-theme">
+            Nota per Raffaele: dopo quasi un mese questo è già una base semifunzionante, ci vorra del tempo per
+            perfezionarla 🥲.
+          </p>
         </div>
       </div>
     </div>

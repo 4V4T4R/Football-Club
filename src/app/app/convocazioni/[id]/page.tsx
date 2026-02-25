@@ -375,15 +375,6 @@ export default function ConvocazioneDetailPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
-
-      <div className="card p-6">
-        <button
-          className="rounded-md border border-theme bg-panel-theme px-4 py-2"
-          onClick={() => router.push("/app/convocazioni")}
-        >
-          ← Torna alle convocazioni
-        </button>
-      </div>
     </div>
   );
 }

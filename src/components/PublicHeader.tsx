@@ -18,7 +18,7 @@ const NAV = [
 
 const APP_NAV = [
   { href: "/app/giocatori", label: "Giocatori" },
-  { href: "/app/eventi", label: "Eventi" },
+  { href: "/app/eventi", label: "Calendario Eventi" },
   { href: "/app/convocazioni", label: "Convocazioni" },
   { href: "/app/impostazioni", label: "Impostazioni" },
 ];

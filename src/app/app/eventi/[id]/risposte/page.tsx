@@ -218,13 +218,6 @@ export default function EventResponsesPage() {
               <b>{ev.title}</b> • {fmtDateTimeIT(ev.start_at)} {ev.location ? "• " + ev.location : ""}
             </p>
           </div>
-
-          <button
-            className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-            onClick={() => router.push("/app/convocazioni/")}
-          >
-            ← Torna a Convocazioni
-          </button>
         </div>
 
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}

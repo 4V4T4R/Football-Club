@@ -48,7 +48,7 @@ export default function Page() {
       <div className="mx-auto max-w-6xl px-6 lg:px-8 pt-0 pb-20">
 
         {/* BLOCCO PRINCIPALE */}
-        <section className="mt-14 grid gap-12 md:grid-cols-[1.1fr_.9fr] md:items-start">
+        <section className="mt-10 grid gap-12 md:grid-cols-[1.1fr_.9fr] md:items-start">
           {/* COLONNA TESTO */}
           <div className="space-y-6 text-center md:text-left">
             <h3
@@ -90,7 +90,7 @@ export default function Page() {
               <img
                 src="/assets/presidente.jpg"
                 alt="Presidente"
-                className="h-[420px] w-full object-cover"
+                className="h-[460px] w-full object-cover"
               />
             </div>
 
