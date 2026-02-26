@@ -231,7 +231,7 @@ export default function MonthCalendar({
                 type="button"
                 onClick={() => onSelectDay(key)}
                 className={[
-                    "h-12 rounded-xl border border-theme px-2",
+                    "h-10 rounded-xl border border-theme px-2",
                     "flex flex-col items-center justify-center transition-colors",
                     inMonth ? "" : "opacity-50",
 

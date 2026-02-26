@@ -1,10 +1,14 @@
+// ✅ INCOLLA QUESTO FILE COMPLETO
 // src/app/app/eventi/page.tsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
 import MonthCalendar, { CalendarEvent } from "@/components/MonthCalendar";
+import PlaceAutocomplete, { PlaceValue } from "@/components/PlaceAutocomplete";
+import MapModal from "@/components/MapModal";
 
 type Club = { id: string; name: string; slug: string };
 type EventType = "training" | "match" | "meeting";
@@ -14,17 +18,18 @@ type EventRow = {
   title: string;
   type: EventType;
   start_at: string;
+
+  // ✅ testo libero SEMPRE
   location: string | null;
+
+  // ✅ dati google solo se selezioni suggerimento
+  location_place_id: string | null;
+  location_address: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+
   created_at: string;
 };
-
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-
-function ymd(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
 
 function toIso(dtLocal: string) {
   return new Date(dtLocal).toISOString();
@@ -55,18 +60,22 @@ export default function EventsPage() {
   const [title, setTitle] = useState("");
   const [type, setType] = useState<EventType>("training");
   const [startAt, setStartAt] = useState("");
-  const [location, setLocation] = useState("");
+
+  // ✅ luogo: testo + (opzionale) place selezionato
+  const [locationText, setLocationText] = useState("");
+  const [place, setPlace] = useState<PlaceValue | null>(null);
+
+  // popup mappa
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapEv, setMapEv] = useState<EventRow | null>(null);
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
 
     for (const ev of events) {
-      const iso = ev.start_at.includes("T")
-        ? ev.start_at
-        : new Date(ev.start_at).toISOString();
-
+      const iso = ev.start_at.includes("T") ? ev.start_at : new Date(ev.start_at).toISOString();
       const key = iso.slice(0, 10);
-      (map[key] ??= []).push(ev);
+      (map[key] ??= []).push(ev as any);
     }
 
     for (const k of Object.keys(map)) {
@@ -86,7 +95,6 @@ export default function EventsPage() {
   }, [title, startAt]);
 
   function prefillStartAtFromDayKey(dayKey: string) {
-    // Se startAt vuoto -> 18:00, se già pieno -> preserva l’orario e cambia solo la data
     if (!startAt) {
       setStartAt(`${dayKey}T18:00`);
       return;
@@ -164,7 +172,9 @@ export default function EventsPage() {
 
     const { data: evData, error: evErr } = await supabase
       .from("events")
-      .select("id, title, type, start_at, location, created_at")
+      .select(
+        "id, title, type, start_at, location, location_place_id, location_address, location_lat, location_lng, created_at"
+      )
       .eq("club_id", clubId)
       .order("start_at", { ascending: true });
 
@@ -192,14 +202,31 @@ export default function EventsPage() {
     const { data: sess } = await supabase.auth.getSession();
     const userId = sess.session?.user?.id ?? null;
 
-    const { error: insErr } = await supabase.from("events").insert({
+    const payload: any = {
       club_id: club.id,
       title: title.trim(),
       type,
       start_at: toIso(startAt),
-      location: location.trim() ? location.trim() : null,
       created_by: userId,
-    });
+    };
+
+    // ✅ 1) SE hai selezionato un luogo da Google: salva testo + coordinate + id
+    if (place) {
+      payload.location = place.address; // testo mostrato ovunque
+      payload.location_address = place.address;
+      payload.location_place_id = place.placeId;
+      payload.location_lat = place.lat;
+      payload.location_lng = place.lng;
+    } else {
+      // ✅ 2) SE NON hai selezionato: salva SOLO testo libero, NIENTE coordinate (quindi niente popup)
+      payload.location = locationText.trim() ? locationText.trim() : null;
+      payload.location_address = null;
+      payload.location_place_id = null;
+      payload.location_lat = null;
+      payload.location_lng = null;
+    }
+
+    const { error: insErr } = await supabase.from("events").insert(payload);
 
     if (insErr) {
       setError(insErr.message);
@@ -209,9 +236,15 @@ export default function EventsPage() {
     setTitle("");
     setType("training");
     setStartAt("");
-    setLocation("");
+    setPlace(null);
+    setLocationText("");
 
     await loadAll();
+  }
+
+  function openMapForEvent(ev: EventRow) {
+    setMapEv(ev);
+    setMapOpen(true);
   }
 
   if (loading) return <div className="card p-8">Caricamento…</div>;
@@ -267,62 +300,76 @@ export default function EventsPage() {
                 </div>
 
                 {selectedEvents.length === 0 ? (
-                  <p className="mt-3 text-sm text-muted-theme">
-                    Nessun evento in questo giorno.
-                  </p>
+                  <p className="mt-3 text-sm text-muted-theme">Nessun evento in questo giorno.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
-                    {selectedEvents.map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="rounded-lg border border-theme bg-black/10 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-medium text-base-theme truncate">
-                              {ev.title}
+                    {selectedEvents.map((ev: any) => {
+                      const addr: string =
+                        ev.location_address || ev.location || "";
+
+                      const hasCoords = !!ev.location_lat && !!ev.location_lng;
+
+                      return (
+                        <div key={ev.id} className="rounded-lg border border-theme bg-black/10 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-base-theme truncate">{ev.title}</div>
+
+                              <div className="mt-1 text-xs text-muted-theme">
+                                {ev.type === "training"
+                                  ? "Allenamento"
+                                  : ev.type === "match"
+                                  ? "Partita"
+                                  : "Riunione"}
+                                {" • "}
+                                {fmtDateTimeIT(ev.start_at)}
+                                {addr ? " • " : ""}
+
+                                {/* ✅ SE coordinate => click popup, ALTRIMENTI solo testo */}
+                                {addr ? (
+                                  hasCoords ? (
+                                    <button
+                                      type="button"
+                                      className="underline underline-offset-4 hover:opacity-90"
+                                      onClick={() => openMapForEvent(ev)}
+                                      title="Apri mappa"
+                                    >
+                                      {addr}
+                                    </button>
+                                  ) : (
+                                    <span>{addr}</span>
+                                  )
+                                ) : null}
+                              </div>
                             </div>
 
-                            <div className="mt-1 text-xs text-muted-theme">
-                              {ev.type === "training"
-                                ? "Allenamento"
-                                : ev.type === "match"
-                                ? "Partita"
-                                : "Riunione"}
-                              {" • "}
-                              {fmtDateTimeIT(ev.start_at)}
-                              {ev.location ? " • " + ev.location : ""}
-                            </div>
+                            {isStaff && (
+                              <div className="shrink-0 flex flex-col gap-2">
+                                <Link
+                                  className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
+                                  href={"/app/eventi/" + ev.id}
+                                >
+                                  Convoca →
+                                </Link>
+
+                                <Link
+                                  className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
+                                  href={"/app/eventi/" + ev.id + "/risposte"}
+                                >
+                                  Risposte →
+                                </Link>
+                              </div>
+                            )}
                           </div>
-
-                          {isStaff && (
-                            <div className="shrink-0 flex flex-col gap-2">
-                              <Link
-                                className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                                href={"/app/eventi/" + ev.id}
-                              >
-                                Convoca →
-                              </Link>
-
-                              <Link
-                                className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                                href={"/app/eventi/" + ev.id + "/risposte"}
-                              >
-                                Risposte →
-                              </Link>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             ) : (
               <div className="rounded-xl border border-theme bg-panel-theme p-4">
-                <p className="text-sm text-muted-theme">
-                  Seleziona un giorno dal calendario.
-                </p>
+                <p className="text-sm text-muted-theme">Seleziona un giorno dal calendario.</p>
               </div>
             )}
           </div>
@@ -360,12 +407,32 @@ export default function EventsPage() {
                 />
               </div>
 
-              <input
-                className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
-                placeholder="Luogo (opzionale)"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
+              {/* ✅ LUOGO: testo libero + autocomplete */}
+              <div>
+                <label className="mb-1 block text-xs text-muted-theme">
+                  Luogo (seleziona da suggerimenti oppure scrivi libero)
+                </label>
+
+                <PlaceAutocomplete
+                  value={place}
+                  onChange={(v) => {
+                    setPlace(v);
+                    // se scegli un suggerimento, allineo il testo
+                    setLocationText(v?.address ?? "");
+                  }}
+                  placeholder="Via… / Stadio… / Campo…"
+                  inputClassName="w-full h-10 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                  // ✅ se scrivi e NON scegli un suggerimento, deve restare testo libero:
+                  onInputChange={(txt: string) => {
+                    setLocationText(txt);
+                    setPlace(null); // ← importante: così verrà salvato come “solo testo”
+                  }}
+                />
+
+                <div className="mt-2 text-xs text-muted-theme">
+                  Se selezioni un suggerimento → salviamo coordinate (popup mappa). Se scrivi libero → solo testo.
+                </div>
+              </div>
 
               <button
                 className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
@@ -382,6 +449,15 @@ export default function EventsPage() {
           </div>
         )}
       </div>
+
+      <MapModal
+        open={mapOpen}
+        onClose={() => setMapOpen(false)}
+        title={mapEv?.title ?? "Posizione"}
+        address={mapEv?.location_address ?? mapEv?.location ?? null}
+        lat={mapEv?.location_lat ?? null}
+        lng={mapEv?.location_lng ?? null}
+      />
     </div>
   );
 }

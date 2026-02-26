@@ -1,8 +1,12 @@
+// ✅ INCOLLA QUESTO FILE COMPLETO (sostituisci TUTTO il tuo file convocazioni)
+// Nota: ho rimosso TUTTO il vecchio blocco iframe/mapTitle/mapQuery (era quello che ti rompeva la compilazione)
+
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import MapModal from "@/components/MapModal";
 
 type EventRow = {
   id: string;
@@ -10,7 +14,13 @@ type EventRow = {
   title: string;
   type: "training" | "match" | "meeting";
   start_at: string;
+
   location: string | null;
+
+  location_place_id?: string | null;
+  location_address?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
 };
 
 type PlayerRow = { id: string; club_id: string };
@@ -42,8 +52,6 @@ export default function ConvocazioniPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [clubName, setClubName] = useState<string>("");
-
-  // role
   const [isStaff, setIsStaff] = useState(false);
 
   // staff data
@@ -57,6 +65,16 @@ export default function ConvocazioniPage() {
   const [playerStatusByEvent, setPlayerStatusByEvent] = useState<
     Record<string, "yes" | "no" | null>
   >({});
+
+  // ✅ popup mappa (solo se ci sono coordinate)
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapEv, setMapEv] = useState<EventRow | null>(null);
+
+  function openMapForEvent(ev: EventRow) {
+    if (ev.location_lat == null || ev.location_lng == null) return;
+    setMapEv(ev);
+    setMapOpen(true);
+  }
 
   const hasStaffEvents = staffEvents.length > 0;
   const hasPlayerEvents = playerEvents.length > 0;
@@ -79,7 +97,6 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    // 1) role + club_id da club_members
     const { data: member, error: mbErr } = await supabase
       .from("club_members")
       .select("club_id, role")
@@ -95,9 +112,6 @@ export default function ConvocazioniPage() {
     const staff = ["admin", "staff"].includes(member?.role ?? "");
     setIsStaff(staff);
 
-    // 2) determina clubId:
-    // - staff: club_members.club_id
-    // - player: players.club_id
     let clubId: string | null = member?.club_id ?? null;
     let player: PlayerRow | null = null;
 
@@ -113,6 +127,7 @@ export default function ConvocazioniPage() {
         setLoading(false);
         return;
       }
+
       player = (pl as PlayerRow | null) ?? null;
       clubId = player?.club_id ?? null;
     }
@@ -123,7 +138,6 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    // 3) carica nome club (solo per titolo)
     const { data: clubData } = await supabase
       .from("clubs")
       .select("name")
@@ -138,9 +152,7 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    // player view
     if (!player?.id) {
-      // se qui non hai player.id, fai lookup (caso in cui member esiste ma non è staff e non aveva clubId)
       const { data: pl2, error: pl2Err } = await supabase
         .from("players")
         .select("id, club_id")
@@ -167,12 +179,13 @@ export default function ConvocazioniPage() {
   }
 
   async function loadStaffView(clubId: string) {
-    // eventi futuri (convocazioni "attive")
     const nowIso = new Date().toISOString();
 
     const { data: evData, error: evErr } = await supabase
       .from("events")
-      .select("id, club_id, title, type, start_at, location")
+      .select(
+        "id, club_id, title, type, start_at, location, location_address, location_lat, location_lng"
+      )
       .eq("club_id", clubId)
       .gte("start_at", nowIso)
       .order("start_at", { ascending: true });
@@ -192,7 +205,6 @@ export default function ConvocazioniPage() {
 
     const eventIds = events.map((e) => e.id);
 
-    // targets (quanti convocati)
     const { data: targets, error: tgErr } = await supabase
       .from("event_targets")
       .select("event_id, player_id")
@@ -204,7 +216,6 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    // risposte (yes/no)
     const { data: responses, error: rsErr } = await supabase
       .from("event_responses")
       .select("event_id, player_id, status")
@@ -223,11 +234,9 @@ export default function ConvocazioniPage() {
     const yesByEvent: Record<string, number> = {};
     const respondedByEvent: Record<string, number> = {};
 
-    for (const r of ((responses as ResponseRow[] | null) ?? [])) {
+    for (const r of (responses as ResponseRow[] | null) ?? []) {
       respondedByEvent[r.event_id] = (respondedByEvent[r.event_id] ?? 0) + 1;
-      if (r.status === "yes") {
-        yesByEvent[r.event_id] = (yesByEvent[r.event_id] ?? 0) + 1;
-      }
+      if (r.status === "yes") yesByEvent[r.event_id] = (yesByEvent[r.event_id] ?? 0) + 1;
     }
 
     const counts: Record<string, { total: number; yes: number; pending: number }> = {};
@@ -243,7 +252,6 @@ export default function ConvocazioniPage() {
   }
 
   async function loadPlayerView(playerId: string) {
-    // 1) prendo gli event_id dove il player è target
     const { data: targets, error: tgErr } = await supabase
       .from("event_targets")
       .select("event_id")
@@ -263,10 +271,11 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    // 2) carico gli eventi
     const { data: evData, error: evErr } = await supabase
       .from("events")
-      .select("id, club_id, title, type, start_at, location")
+      .select(
+        "id, club_id, title, type, start_at, location, location_address, location_lat, location_lng"
+      )
       .in("id", eventIds)
       .order("start_at", { ascending: true });
 
@@ -278,7 +287,6 @@ export default function ConvocazioniPage() {
     const events = (evData as EventRow[] | null) ?? [];
     setPlayerEvents(events);
 
-    // 3) carico eventuali risposte del player
     const { data: resp, error: rsErr } = await supabase
       .from("event_responses")
       .select("event_id, status")
@@ -295,14 +303,10 @@ export default function ConvocazioniPage() {
     for (const r of (resp as any[] | null) ?? []) {
       map[r.event_id] = (r.status as "yes" | "no") ?? null;
     }
-
     setPlayerStatusByEvent(map);
   }
 
-  const title = useMemo(() => {
-    if (isStaff) return "Convocazioni";
-    return "Le mie convocazioni";
-  }, [isStaff]);
+  const title = useMemo(() => (isStaff ? "Convocazioni" : "Le mie convocazioni"), [isStaff]);
 
   if (loading) return <div className="card p-8">Caricamento…</div>;
 
@@ -313,7 +317,9 @@ export default function ConvocazioniPage() {
         <p className="mt-2 text-muted-theme">
           {isStaff
             ? `Riepilogo convocazioni attive${clubName ? " di " + clubName : ""}.`
-            : `Qui trovi le convocazioni dove sei stato selezionato${clubName ? " (" + clubName + ")" : ""}.`}
+            : `Qui trovi le convocazioni dove sei stato selezionato${
+                clubName ? " (" + clubName + ")" : ""
+              }.`}
         </p>
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       </div>
@@ -330,6 +336,9 @@ export default function ConvocazioniPage() {
               <div className="mt-4 md:hidden space-y-2">
                 {staffEvents.map((ev) => {
                   const c = staffCounts[ev.id] ?? { total: 0, yes: 0, pending: 0 };
+                  const addr = (ev.location_address ?? ev.location ?? "").trim();
+                  const hasCoords = ev.location_lat != null && ev.location_lng != null;
+
                   return (
                     <div key={ev.id} className="rounded-xl border border-theme bg-panel-theme p-3">
                       <div className="flex items-start justify-between gap-3">
@@ -342,10 +351,27 @@ export default function ConvocazioniPage() {
                               <span>📅</span>
                               <span>{fmtDateTimeIT(ev.start_at)}</span>
                             </div>
+
                             <div className="flex items-start gap-2">
                               <span>📍</span>
-                              <span>{ev.location ?? "—"}</span>
+                              {addr ? (
+                                hasCoords ? (
+                                  <button
+                                    type="button"
+                                    className="text-left underline underline-offset-4"
+                                    onClick={() => openMapForEvent(ev)}
+                                    title="Apri mappa"
+                                  >
+                                    {addr}
+                                  </button>
+                                ) : (
+                                  <span>{addr}</span>
+                                )
+                              ) : (
+                                <span>—</span>
+                              )}
                             </div>
+
                             <div className="flex items-start gap-2">
                               <span>✅</span>
                               <span>
@@ -389,9 +415,13 @@ export default function ConvocazioniPage() {
                       <th className="px-3 py-2 text-right w-[18%]">Azioni</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {staffEvents.map((ev) => {
                       const c = staffCounts[ev.id] ?? { total: 0, yes: 0, pending: 0 };
+                      const addr = (ev.location_address ?? ev.location ?? "").trim();
+                      const hasCoords = ev.location_lat != null && ev.location_lng != null;
+
                       return (
                         <tr key={ev.id} className="border-t border-theme align-top">
                           <td className="px-3 py-3">
@@ -404,9 +434,25 @@ export default function ConvocazioniPage() {
                               <span>📅</span>
                               <span>{fmtDateTimeIT(ev.start_at)}</span>
                             </div>
+
                             <div className="mt-2 flex items-start gap-2">
                               <span>📍</span>
-                              <span>{ev.location ?? "—"}</span>
+                              {addr ? (
+                                hasCoords ? (
+                                  <button
+                                    type="button"
+                                    className="text-left underline underline-offset-4"
+                                    onClick={() => openMapForEvent(ev)}
+                                    title="Apri mappa"
+                                  >
+                                    {addr}
+                                  </button>
+                                ) : (
+                                  <span>{addr}</span>
+                                )
+                              ) : (
+                                <span>—</span>
+                              )}
                             </div>
                           </td>
 
@@ -414,9 +460,7 @@ export default function ConvocazioniPage() {
                             <div className="font-medium">
                               {c.yes} / {c.total} ✅
                             </div>
-                            <div className="text-xs text-muted-theme">
-                              ⏳ {c.pending} in attesa
-                            </div>
+                            <div className="text-xs text-muted-theme">⏳ {c.pending} in attesa</div>
                           </td>
 
                           <td className="px-3 py-3">
@@ -459,35 +503,52 @@ export default function ConvocazioniPage() {
                   const badge =
                     st === "yes" ? "✅ Presente" : st === "no" ? "❌ Assente" : "⏳ In attesa";
 
-                  return (
-                    <Link
-                      key={ev.id}
-                      href={"/app/convocazioni/" + ev.id}
-                      className="block rounded-xl border border-theme bg-panel-theme p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-medium text-base-theme truncate">{ev.title}</div>
-                          <div className="text-xs text-muted-theme">{typeLabel(ev.type)}</div>
+                  const addr = (ev.location_address ?? ev.location ?? "").trim();
+                  const hasCoords = ev.location_lat != null && ev.location_lng != null;
 
-                          <div className="mt-2 text-xs text-muted-theme space-y-1">
-                            <div className="flex items-start gap-2">
-                              <span>📅</span>
-                              <span>{fmtDateTimeIT(ev.start_at)}</span>
-                            </div>
-                            <div className="flex items-start gap-2">
-                              <span>📍</span>
-                              <span>{ev.location ?? "—"}</span>
+                  return (
+                    <div key={ev.id} className="rounded-xl border border-theme bg-panel-theme p-3">
+                      <Link href={"/app/convocazioni/" + ev.id} className="block">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium text-base-theme truncate">{ev.title}</div>
+                            <div className="text-xs text-muted-theme">{typeLabel(ev.type)}</div>
+
+                            <div className="mt-2 text-xs text-muted-theme space-y-1">
+                              <div className="flex items-start gap-2">
+                                <span>📅</span>
+                                <span>{fmtDateTimeIT(ev.start_at)}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="shrink-0 text-xs text-muted-theme text-right">
-                          <div className="font-medium text-base-theme">{badge}</div>
-                          <div className="mt-1 opacity-80">Apri →</div>
+                          <div className="shrink-0 text-xs text-muted-theme text-right">
+                            <div className="font-medium text-base-theme">{badge}</div>
+                            <div className="mt-1 opacity-80">Apri →</div>
+                          </div>
                         </div>
+                      </Link>
+
+                      <div className="mt-2 flex items-start gap-2 text-xs text-muted-theme">
+                        <span>📍</span>
+                        {addr ? (
+                          hasCoords ? (
+                            <button
+                              type="button"
+                              className="text-left underline underline-offset-4"
+                              onClick={() => openMapForEvent(ev)}
+                              title="Apri mappa"
+                            >
+                              {addr}
+                            </button>
+                          ) : (
+                            <span>{addr}</span>
+                          )
+                        ) : (
+                          <span>—</span>
+                        )}
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -503,11 +564,15 @@ export default function ConvocazioniPage() {
                       <th className="px-3 py-2 text-right w-[12%]">Azioni</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {playerEvents.map((ev) => {
                       const st = playerStatusByEvent[ev.id] ?? null;
                       const badge =
                         st === "yes" ? "✅ Presente" : st === "no" ? "❌ Assente" : "⏳ In attesa";
+
+                      const addr = (ev.location_address ?? ev.location ?? "").trim();
+                      const hasCoords = ev.location_lat != null && ev.location_lng != null;
 
                       return (
                         <tr key={ev.id} className="border-t border-theme align-top">
@@ -521,9 +586,25 @@ export default function ConvocazioniPage() {
                               <span>📅</span>
                               <span>{fmtDateTimeIT(ev.start_at)}</span>
                             </div>
+
                             <div className="mt-2 flex items-start gap-2">
                               <span>📍</span>
-                              <span>{ev.location ?? "—"}</span>
+                              {addr ? (
+                                hasCoords ? (
+                                  <button
+                                    type="button"
+                                    className="text-left underline underline-offset-4"
+                                    onClick={() => openMapForEvent(ev)}
+                                    title="Apri mappa"
+                                  >
+                                    {addr}
+                                  </button>
+                                ) : (
+                                  <span>{addr}</span>
+                                )
+                              ) : (
+                                <span>—</span>
+                              )}
                             </div>
                           </td>
 
@@ -531,7 +612,7 @@ export default function ConvocazioniPage() {
                             <div className="font-medium">{badge}</div>
                           </td>
 
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3 text-right">
                             <Link
                               className="rounded-md border border-theme bg-panel-theme px-3 py-2"
                               href={"/app/convocazioni/" + ev.id}
@@ -549,6 +630,15 @@ export default function ConvocazioniPage() {
           )}
         </div>
       )}
+
+      <MapModal
+        open={mapOpen}
+        onClose={() => setMapOpen(false)}
+        title={mapEv?.title ?? "Posizione"}
+        address={mapEv?.location_address ?? mapEv?.location ?? null}
+        lat={mapEv?.location_lat ?? null}
+        lng={mapEv?.location_lng ?? null}
+      />
     </div>
   );
 }
