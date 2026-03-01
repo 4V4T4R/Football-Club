@@ -30,12 +30,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("clubs")
-        .select("id, name, slug")
-        .limit(1);
-
+      const { data, error } = await supabase.from("clubs").select("id, name, slug").limit(1);
       if (!error && data && data.length > 0) setClub(data[0]);
+
       setLoading(false);
     }
 
@@ -48,14 +45,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <PageBg image="/assets/auth-bg.jpg">
-    <div className="min-h-screen">
-      {/* SHELL: nota che non c'è più topbar duplice (usiamo il header pubblico) */}
-      <div className="mx-auto w-full max-w-7xl px-4 grid gap-6 md:grid-cols-[210px_1fr]">
-        {/* Sidebar */}
-        <aside className="hidden md:block card p-3 md:p-4">
-          <nav className="flex gap-2 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
-            {NAV.map((item) => {
-              const active = pathname === item.href;
+      <div className="page-bg__content min-h-screen">
+        <div className="mx-auto w-full max-w-7xl px-4 pt-6 md:pt-8 grid gap-6 md:grid-cols-[210px_1fr]">
+          {/* Sidebar */}
+          <aside className="hidden md:block card p-3 md:p-4">
+            <nav className="flex gap-2 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
+              {NAV.map((item) => {
+                const active = pathname === item.href;
                 return (
                   <Link
                     key={item.href}
@@ -63,22 +59,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     className={[
                       "shrink-0 rounded-lg px-3 py-2 text-sm transition",
                       "md:block md:w-full",
-                      active
-                        ? "bg-panel-theme border border-theme"
-                        : "hover:bg-panel-theme",
+                      active ? "bg-panel-theme border border-theme" : "hover:bg-panel-theme",
                     ].join(" ")}
                   >
                     {item.label}
                   </Link>
                 );
               })}
-          </nav>
-        </aside>
+            </nav>
+          </aside>
 
-        {/* Content */}
-        <main className="min-w-0">{children}</main>
+          {/* Content */}
+          <main className="min-w-0">{children}</main>
+        </div>
       </div>
-    </div>
     </PageBg>
   );
 }

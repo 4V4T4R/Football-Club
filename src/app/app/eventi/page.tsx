@@ -1,6 +1,3 @@
-// ✅ INCOLLA QUESTO FILE COMPLETO
-// src/app/app/eventi/page.tsx
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -19,10 +16,8 @@ type EventRow = {
   type: EventType;
   start_at: string;
 
-  // ✅ testo libero SEMPRE
   location: string | null;
 
-  // ✅ dati google solo se selezioni suggerimento
   location_place_id: string | null;
   location_address: string | null;
   location_lat: number | null;
@@ -30,6 +25,8 @@ type EventRow = {
 
   created_at: string;
 };
+
+type Tip = { title: string; body: string };
 
 function toIso(dtLocal: string) {
   return new Date(dtLocal).toISOString();
@@ -47,21 +44,27 @@ function fmtDateTimeIT(iso: string) {
   }).format(d);
 }
 
+function typeLabel(t: EventType) {
+  return t === "training" ? "Allenamento" : t === "match" ? "Partita" : "Riunione";
+}
+
 export default function EventsPage() {
   const [club, setClub] = useState<Club | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isStaff, setIsStaff] = useState(false);
+
   const [month, setMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const [createOpen, setCreateOpen] = useState(false);
 
   // form
   const [title, setTitle] = useState("");
   const [type, setType] = useState<EventType>("training");
   const [startAt, setStartAt] = useState("");
 
-  // ✅ luogo: testo + (opzionale) place selezionato
   const [locationText, setLocationText] = useState("");
   const [place, setPlace] = useState<PlaceValue | null>(null);
 
@@ -130,7 +133,8 @@ export default function EventsPage() {
       return;
     }
 
-    setIsStaff(["admin", "staff"].includes(member?.role ?? ""));
+    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    setIsStaff(staff);
 
     if (member?.club_id) {
       clubId = member.club_id;
@@ -210,15 +214,13 @@ export default function EventsPage() {
       created_by: userId,
     };
 
-    // ✅ 1) SE hai selezionato un luogo da Google: salva testo + coordinate + id
     if (place) {
-      payload.location = place.address; // testo mostrato ovunque
+      payload.location = place.address;
       payload.location_address = place.address;
       payload.location_place_id = place.placeId;
       payload.location_lat = place.lat;
       payload.location_lng = place.lng;
     } else {
-      // ✅ 2) SE NON hai selezionato: salva SOLO testo libero, NIENTE coordinate (quindi niente popup)
       payload.location = locationText.trim() ? locationText.trim() : null;
       payload.location_address = null;
       payload.location_place_id = null;
@@ -247,7 +249,164 @@ export default function EventsPage() {
     setMapOpen(true);
   }
 
+  const tipsStaff: Tip[] = [
+    { title: "Crea evento", body: 'Premi "+" in alto a destra sul calendario.' },
+    { title: "Convocazioni", body: 'Apri un evento e clicca "Convoca →" per selezionare i giocatori.' },
+    { title: "Risposte", body: 'Apri "Risposte →" per vedere Presente/Assente e i motivi.' },
+    { title: "Luogo", body: "Se scegli un suggerimento → salviamo coordinate (mappa). Se scrivi libero → solo testo." },
+  ];
+
+  const tipsPlayer: Tip[] = [
+    { title: "Calendario", body: "Tocca un giorno per vedere gli eventi del giorno." },
+    { title: "Le tue convocazioni", body: 'Vai su "Convocazioni" per rispondere Presente/Assente.' },
+    { title: "Motivo + allegato", body: "Se sei assente puoi inserire un motivo e caricare un allegato." },
+    { title: "Luogo", body: "Se l'evento ha coordinate puoi aprire la mappa toccando l'indirizzo." },
+  ];
+
+  const tips = isStaff ? tipsStaff : tipsPlayer;
+
   if (loading) return <div className="card p-8">Caricamento…</div>;
+
+  const CalendarCard = (
+    <div className="card p-6 min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-lg font-semibold text-base-theme">Calendario 🗓️</h2>
+
+        {isStaff && (
+          <button
+            type="button"
+            className="h-10 w-10 rounded-md border border-theme bg-panel-theme flex items-center justify-center text-lg"
+            title="Crea evento"
+            onClick={() => setCreateOpen(true)}
+          >
+            +
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 space-y-4">
+        <MonthCalendar
+          month={month}
+          selectedDay={selectedDay}
+          eventsByDay={eventsByDay}
+          onMonthChange={(m) => {
+            setMonth(m);
+            setSelectedDay(null);
+          }}
+          onSelectDay={(k) => {
+            setSelectedDay(k);
+            prefillStartAtFromDayKey(k);
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  const DayEventsCard = (
+    <div className="card p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-base-theme">
+          {selectedDay
+            ? `Eventi del ${new Intl.DateTimeFormat("it-IT", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+              }).format(new Date(selectedDay))}`
+            : "Eventi del giorno"}
+        </h2>
+
+        {selectedDay ? (
+          <button
+            type="button"
+            className="rounded-md border border-theme bg-panel-theme px-3 py-1.5 text-sm"
+            onClick={() => setSelectedDay(null)}
+          >
+            Chiudi
+          </button>
+        ) : null}
+      </div>
+
+      {!selectedDay ? (
+        <p className="mt-3 text-sm text-muted-theme">Seleziona un giorno dal calendario.</p>
+      ) : selectedEvents.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-theme">Nessun evento in questo giorno.</p>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {selectedEvents.map((ev: any) => {
+            const addr: string = ev.location_address || ev.location || "";
+            const hasCoords = !!ev.location_lat && !!ev.location_lng;
+
+            return (
+              <div key={ev.id} className="rounded-lg border border-theme bg-black/10 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-base-theme truncate">{ev.title}</div>
+
+                    <div className="mt-1 text-xs text-muted-theme">
+                      {typeLabel(ev.type)}
+                      {" • "}
+                      {fmtDateTimeIT(ev.start_at)}
+                      {addr ? " • " : ""}
+
+                      {addr ? (
+                        hasCoords ? (
+                          <button
+                            type="button"
+                            className="underline underline-offset-4 hover:opacity-90"
+                            onClick={() => openMapForEvent(ev)}
+                            title="Apri mappa"
+                          >
+                            {addr}
+                          </button>
+                        ) : (
+                          <span>{addr}</span>
+                        )
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {isStaff && (
+                    <div className="shrink-0 flex flex-col gap-2">
+                      <Link
+                        className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
+                        href={"/app/eventi/" + ev.id}
+                      >
+                        Convoca →
+                      </Link>
+
+                      <Link
+                        className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
+                        href={"/app/eventi/" + ev.id + "/risposte"}
+                      >
+                        Risposte →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const TipsCard = (
+    <div className="card p-6 min-w-0">
+      <h2 className="text-lg font-semibold text-base-theme">
+        Suggerimenti {isStaff ? "(staff)" : "(giocatore)"}
+      </h2>
+
+      <div className="mt-3 space-y-3 text-sm text-muted-theme">
+        {tips.map((t) => (
+          <div key={t.title} className="rounded-xl border border-theme bg-panel-theme p-3">
+            <div className="font-medium text-base-theme">{t.title}</div>
+            <div className="mt-1">{t.body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -259,196 +418,126 @@ export default function EventsPage() {
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_320px]">
-        <div className="card p-6 min-w-0">
-          <h2 className="text-lg font-semibold text-base-theme">Calendario 🗓️</h2>
+      {/* ✅ MOBILE: Calendario -> Eventi del giorno -> Suggerimenti */}
+      <div className="space-y-6 md:hidden">
+        {CalendarCard}
+        {DayEventsCard}
+        {TipsCard}
+      </div>
 
-          <div className="mt-4 space-y-4">
-            <MonthCalendar
-              month={month}
-              selectedDay={selectedDay}
-              eventsByDay={eventsByDay}
-              onMonthChange={(m) => {
-                setMonth(m);
-                setSelectedDay(null);
-              }}
-              onSelectDay={(k) => {
-                setSelectedDay(k);
-                prefillStartAtFromDayKey(k);
-              }}
-            />
+      {/* ✅ DESKTOP: Calendario + Suggerimenti affiancati, Eventi del giorno sotto */}
+      <div className="hidden md:block space-y-6">
+        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_320px]">
+          {CalendarCard}
+          {TipsCard}
+        </div>
+        {DayEventsCard}
+      </div>
 
-            {selectedDay ? (
-              <div className="rounded-xl border border-theme bg-panel-theme p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-base-theme">
-                    Eventi del{" "}
-                    {new Intl.DateTimeFormat("it-IT", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    }).format(new Date(selectedDay))}
-                  </div>
+      {/* MODAL CREA EVENTO */}
+      {isStaff && createOpen && (
+        <div className="fixed inset-0 z-[60]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi"
+            onClick={() => setCreateOpen(false)}
+          />
 
-                  <button
-                    type="button"
-                    className="rounded-md border border-theme bg-panel-theme px-3 py-1.5 text-sm"
-                    onClick={() => setSelectedDay(null)}
-                  >
-                    Chiudi
-                  </button>
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-base-theme">Crea evento</h2>
+                  <p className="mt-1 text-xs text-muted-theme">
+                    Compila i campi e salva. Poi potrai convocare i giocatori.
+                  </p>
                 </div>
 
-                {selectedEvents.length === 0 ? (
-                  <p className="mt-3 text-sm text-muted-theme">Nessun evento in questo giorno.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {selectedEvents.map((ev: any) => {
-                      const addr: string =
-                        ev.location_address || ev.location || "";
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                  onClick={() => setCreateOpen(false)}
+                  title="Chiudi"
+                >
+                  ✖️
+                </button>
+              </div>
 
-                      const hasCoords = !!ev.location_lat && !!ev.location_lng;
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={async (e) => {
+                  await createEvent(e);
+                  setCreateOpen(false);
+                }}
+              >
+                <input
+                  className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                  placeholder="Titolo (es. Allenamento, Partita vs ...)"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
 
-                      return (
-                        <div key={ev.id} className="rounded-lg border border-theme bg-black/10 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-medium text-base-theme truncate">{ev.title}</div>
+                <select
+                  className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                  value={type}
+                  onChange={(e) => setType(e.target.value as EventType)}
+                >
+                  <option value="training">Allenamento</option>
+                  <option value="match">Partita</option>
+                  <option value="meeting">Riunione</option>
+                </select>
 
-                              <div className="mt-1 text-xs text-muted-theme">
-                                {ev.type === "training"
-                                  ? "Allenamento"
-                                  : ev.type === "match"
-                                  ? "Partita"
-                                  : "Riunione"}
-                                {" • "}
-                                {fmtDateTimeIT(ev.start_at)}
-                                {addr ? " • " : ""}
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Data e ora</label>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                    value={startAt}
+                    onChange={(e) => setStartAt(e.target.value)}
+                  />
+                </div>
 
-                                {/* ✅ SE coordinate => click popup, ALTRIMENTI solo testo */}
-                                {addr ? (
-                                  hasCoords ? (
-                                    <button
-                                      type="button"
-                                      className="underline underline-offset-4 hover:opacity-90"
-                                      onClick={() => openMapForEvent(ev)}
-                                      title="Apri mappa"
-                                    >
-                                      {addr}
-                                    </button>
-                                  ) : (
-                                    <span>{addr}</span>
-                                  )
-                                ) : null}
-                              </div>
-                            </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">
+                    Luogo (seleziona da suggerimenti oppure scrivi libero)
+                  </label>
 
-                            {isStaff && (
-                              <div className="shrink-0 flex flex-col gap-2">
-                                <Link
-                                  className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                                  href={"/app/eventi/" + ev.id}
-                                >
-                                  Convoca →
-                                </Link>
+                  <PlaceAutocomplete
+                    value={place}
+                    onChange={(v) => {
+                      setPlace(v);
+                      setLocationText(v?.address ?? "");
+                    }}
+                    placeholder="Via… / Stadio… / Campo…"
+                    inputClassName="w-full h-10 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                    onInputChange={(txt: string) => {
+                      setLocationText(txt);
+                      setPlace(null);
+                    }}
+                  />
 
-                                <Link
-                                  className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                                  href={"/app/eventi/" + ev.id + "/risposte"}
-                                >
-                                  Risposte →
-                                </Link>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="mt-2 text-xs text-muted-theme">
+                    Se selezioni un suggerimento → salviamo coordinate (popup mappa). Se scrivi libero → solo testo.
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-theme bg-panel-theme p-4">
-                <p className="text-sm text-muted-theme">Seleziona un giorno dal calendario.</p>
-              </div>
-            )}
+                </div>
+
+                <button
+                  className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                  disabled={!canSubmit}
+                  style={{ opacity: canSubmit ? 1 : 0.6 }}
+                >
+                  Crea
+                </button>
+              </form>
+
+              <p className="mt-3 text-xs text-muted-theme">
+                Tip: clicca un giorno sul calendario per precompilare data/ora.
+              </p>
+            </div>
           </div>
         </div>
-
-        {isStaff && (
-          <div className="card p-6 min-w-0">
-            <h2 className="text-lg font-semibold text-base-theme">Crea evento</h2>
-
-            <form className="mt-4 space-y-3" onSubmit={createEvent}>
-              <input
-                className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
-                placeholder="Titolo (es. Allenamento, Partita vs ...)"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-
-              <select
-                className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
-                value={type}
-                onChange={(e) => setType(e.target.value as EventType)}
-              >
-                <option value="training">Allenamento</option>
-                <option value="match">Partita</option>
-                <option value="meeting">Riunione</option>
-              </select>
-
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">Data e ora</label>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
-                  value={startAt}
-                  onChange={(e) => setStartAt(e.target.value)}
-                />
-              </div>
-
-              {/* ✅ LUOGO: testo libero + autocomplete */}
-              <div>
-                <label className="mb-1 block text-xs text-muted-theme">
-                  Luogo (seleziona da suggerimenti oppure scrivi libero)
-                </label>
-
-                <PlaceAutocomplete
-                  value={place}
-                  onChange={(v) => {
-                    setPlace(v);
-                    // se scegli un suggerimento, allineo il testo
-                    setLocationText(v?.address ?? "");
-                  }}
-                  placeholder="Via… / Stadio… / Campo…"
-                  inputClassName="w-full h-10 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  // ✅ se scrivi e NON scegli un suggerimento, deve restare testo libero:
-                  onInputChange={(txt: string) => {
-                    setLocationText(txt);
-                    setPlace(null); // ← importante: così verrà salvato come “solo testo”
-                  }}
-                />
-
-                <div className="mt-2 text-xs text-muted-theme">
-                  Se selezioni un suggerimento → salviamo coordinate (popup mappa). Se scrivi libero → solo testo.
-                </div>
-              </div>
-
-              <button
-                className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-                disabled={!canSubmit}
-                style={{ opacity: canSubmit ? 1 : 0.6 }}
-              >
-                Crea
-              </button>
-            </form>
-
-            <p className="mt-3 text-xs text-muted-theme">
-              Dopo la creazione, clicca “Convoca →” per selezionare i giocatori.
-            </p>
-          </div>
-        )}
-      </div>
+      )}
 
       <MapModal
         open={mapOpen}

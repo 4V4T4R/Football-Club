@@ -54,6 +54,8 @@ export default function PlayersPage() {
   const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
   const [sheetOpenId, setSheetOpenId] = useState<string | null>(null);
 
+  const [displayName, setDisplayName] = useState<string>("");
+
   // refs per bottone azioni
   const actionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -78,20 +80,61 @@ export default function PlayersPage() {
     const { data: session } = await supabase.auth.getSession();
     const userId = session.session?.user?.id;
 
+    let roleValue: string | null = null;
+
     if (userId) {
       const { data: membership } = await supabase
         .from("club_members")
         .select("role")
         .eq("user_id", userId)
         .maybeSingle();
-      setRole(membership?.role ?? null);
+
+      roleValue = membership?.role ?? null;
+      setRole(roleValue);
     }
+
+    const isStaffLocal = roleValue === "admin" || roleValue === "staff";
 
     if (!userId) {
       setError("Utente non autenticato.");
       setLoading(false);
       return;
     }
+
+    // Nome mostrato in UI: prova players (nome/cognome), poi metadata, poi email
+    // Nome mostrato in UI:
+    // - se staff: prova tabella public.users
+    // - se player: prova tabella players
+    // - fallback: user_metadata, email
+    const user = session.session?.user;
+    const metaName = (user?.user_metadata?.full_name || user?.user_metadata?.name || "")
+      .toString()
+      .trim();
+    const emailName = (user?.email || "").toString().trim();
+
+    let staffName = "";
+    if (isStaffLocal) {
+      const { data: uRow } = await supabase
+        .from("users")
+        .select("first_name, last_name")
+        .eq("id", userId)
+        .maybeSingle();
+
+      staffName = uRow ? `${uRow.first_name ?? ""} ${uRow.last_name ?? ""}`.trim() : "";
+    }
+
+    let playerName = "";
+    if (!isStaffLocal) {
+      const { data: mePlayer } = await supabase
+        .from("players")
+        .select("first_name, last_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      playerName = mePlayer ? `${mePlayer.first_name ?? ""} ${mePlayer.last_name ?? ""}`.trim() : "";
+    }
+
+    setDisplayName(staffName || playerName || metaName || emailName || "");
 
     const { data: member, error: memberErr } = await supabase
       .from("club_members")
@@ -145,13 +188,19 @@ export default function PlayersPage() {
 
     setClub(clubData);
 
-    const { data: playersData, error: playersErr } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, birth_date, shirt_number, active")
-      .eq("club_id", clubId)
-      .order("active", { ascending: false })
-      .order("last_name", { ascending: true })
-      .order("first_name", { ascending: true });
+    let q = supabase
+    .from("players")
+    .select("id, first_name, last_name, birth_date, shirt_number, active")
+    .eq("club_id", clubId);
+
+  if (!isStaffLocal) {
+    q = q.eq("active", true);
+  }
+
+  const { data: playersData, error: playersErr } = await q
+    .order("active", { ascending: false })
+    .order("last_name", { ascending: true })
+    .order("first_name", { ascending: true });
 
     if (playersErr) setError(playersErr.message);
     setPlayers(playersData ?? []);
@@ -407,8 +456,19 @@ export default function PlayersPage() {
     <div className="space-y-6">
       <div className="card p-8">
         <h1 className="text-2xl font-semibold text-base-theme">Giocatori</h1>
+
         <p className="mt-2 text-muted-theme">
-          Gestisci la rosa della squadra {club?.name ? <b>{club.name}</b> : null}.
+          {isStaff ? (
+            <>
+              {displayName ? ` ${displayName}` : ""}, gestisci la rosa della squadra{" "}
+              {club?.name ? <b>{club.name}</b> : null}.
+            </>
+          ) : (
+            <>
+              {displayName ? ` ${displayName}` : ""}, qui vedrai la rosa della squadra{" "}
+              {club?.name ? <b>{club.name}</b> : null}.
+            </>
+          )}
         </p>
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       </div>

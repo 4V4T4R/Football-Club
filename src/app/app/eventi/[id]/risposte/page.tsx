@@ -67,6 +67,10 @@ export default function EventResponsesPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
 
+  // ✅ se staff/admin: sola lettura (niente click/edit)
+  const [isStaff, setIsStaff] = useState(false);
+  const canEdit = !isStaff;
+
   const invitedPlayers = useMemo(() => {
     const set = new Set(targets);
     return players.filter((p) => set.has(p.id));
@@ -75,6 +79,31 @@ export default function EventResponsesPage() {
   async function loadAll() {
     setLoading(true);
     setError(null);
+
+    // ✅ role (serve per rendere inerte lo staff)
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session.session?.user?.id;
+
+    if (!userId) {
+      setError("Utente non autenticato.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: member, error: mbErr } = await supabase
+      .from("club_members")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (mbErr) {
+      setError(mbErr.message);
+      setLoading(false);
+      return;
+    }
+
+    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    setIsStaff(staff);
 
     const { data: evData, error: evErr } = await supabase
       .from("events")
@@ -120,9 +149,9 @@ export default function EventResponsesPage() {
 
     // risposte: event_responses
     const { data: rsData, error: rsErr } = await supabase
-        .from("event_responses")
-        .select("player_id, status, reason, attachment_url, responded_at")
-        .eq("event_id", eventId);
+      .from("event_responses")
+      .select("player_id, status, reason, attachment_url, responded_at")
+      .eq("event_id", eventId);
 
     if (rsErr) {
       setError(rsErr.message);
@@ -143,24 +172,25 @@ export default function EventResponsesPage() {
   }, [eventId]);
 
   async function setResponse(playerId: string, status: "yes" | "no") {
+    if (!canEdit) return; // ✅ staff: inerte
+
     setSavingId(playerId);
     setError(null);
 
     const prev = responses.get(playerId);
     const reason = status === "no" ? (prev?.reason ?? "") : null;
 
-    // upsert (serve unique su (event_id, player_id) nel DB)
     const { error: upErr } = await supabase.from("event_responses").upsert(
-        {
-            event_id: eventId,
-            player_id: playerId,
-            status,
-            reason,
-            attachment_url: prev?.attachment_url ?? null,
-            responded_at: new Date().toISOString(),
-        },
-        { onConflict: "event_id,player_id" }
-        );
+      {
+        event_id: eventId,
+        player_id: playerId,
+        status,
+        reason,
+        attachment_url: prev?.attachment_url ?? null,
+        responded_at: new Date().toISOString(),
+      },
+      { onConflict: "event_id,player_id" }
+    );
 
     if (upErr) {
       setError(upErr.message);
@@ -175,6 +205,8 @@ export default function EventResponsesPage() {
   }
 
   async function saveReason(playerId: string, reason: string) {
+    if (!canEdit) return; // ✅ staff: inerte
+
     setSavingId(playerId);
     setError(null);
 
@@ -182,16 +214,16 @@ export default function EventResponsesPage() {
     const status = prev?.status ?? "no";
 
     const { error: upErr } = await supabase.from("event_responses").upsert(
-        {
-            event_id: eventId,
-            player_id: playerId,
-            status,
-            reason: reason.trim() ? reason.trim() : null,
-            attachment_url: prev?.attachment_url ?? null,
-            responded_at: new Date().toISOString(),
-        },
-        { onConflict: "event_id,player_id" }
-        );
+      {
+        event_id: eventId,
+        player_id: playerId,
+        status,
+        reason: reason.trim() ? reason.trim() : null,
+        attachment_url: prev?.attachment_url ?? null,
+        responded_at: new Date().toISOString(),
+      },
+      { onConflict: "event_id,player_id" }
+    );
 
     if (upErr) {
       setError(upErr.message);
@@ -215,8 +247,13 @@ export default function EventResponsesPage() {
           <div>
             <h1 className="text-2xl font-semibold text-base-theme">Risposte</h1>
             <p className="mt-2 text-muted-theme">
-              <b>{ev.title}</b> • {fmtDateTimeIT(ev.start_at)} {ev.location ? "• " + ev.location : ""}
+              <b>{ev.title}</b> • {fmtDateTimeIT(ev.start_at)}{" "}
+              {ev.location ? "• " + ev.location : ""}
             </p>
+
+            {!canEdit ? (
+              <p className="mt-2 text-xs text-muted-theme">Vista staff: solo lettura.</p>
+            ) : null}
           </div>
         </div>
 
@@ -225,7 +262,9 @@ export default function EventResponsesPage() {
 
       <div className="card p-6">
         {invitedPlayers.length === 0 ? (
-          <p className="text-muted-theme">Nessun convocato: seleziona i convocati nella pagina “Convoca”.</p>
+          <p className="text-muted-theme">
+            Nessun convocato: seleziona i convocati nella pagina “Convoca”.
+          </p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-theme">
             <table className="w-full text-sm">
@@ -236,16 +275,20 @@ export default function EventResponsesPage() {
                   <th className="px-3 py-2 text-left">Motivo (se assente)</th>
                 </tr>
               </thead>
+
               <tbody>
                 {invitedPlayers.map((p) => {
                   const r = responses.get(p.id);
                   const status = normalizeStatus(r?.status ?? null);
+
                   const rowStyle: React.CSSProperties =
                     status === "yes"
-                        ? { borderLeft: "8px solid #22c55e" } // green-500
-                        : status === "no"
-                        ? { borderLeft: "8px solid #ef4444" } // red-500
-                        : {};
+                      ? { borderLeft: "8px solid #22c55e" }
+                      : status === "no"
+                      ? { borderLeft: "8px solid #ef4444" }
+                      : {};
+
+                  const disabled = !canEdit || savingId === p.id;
 
                   return (
                     <tr key={p.id} className="border-t border-theme" style={rowStyle}>
@@ -253,52 +296,70 @@ export default function EventResponsesPage() {
                         {p.last_name} {p.first_name}
                       </td>
 
-                      <td className={"px-3 py-2 text-center " + (status === "yes" ? "text-green-600" : status === "no" ? "text-red-600" : "")}>
+                      <td
+                        className={
+                          "px-3 py-2 text-center " +
+                          (status === "yes"
+                            ? "text-green-600"
+                            : status === "no"
+                            ? "text-red-600"
+                            : "")
+                        }
+                      >
                         <div className="inline-flex gap-2">
                           <button
+                            type="button"
                             className="rounded-md border border-theme bg-panel-theme px-2 py-1"
                             style={{
-                                opacity: status === "yes" ? 1 : 0.5,
-                                outline: status === "yes" ? "2px solid #22c55e" : "none",
-                                outlineOffset: "2px",
+                              opacity: status === "yes" ? 1 : 0.5,
+                              outline: status === "yes" ? "2px solid #22c55e" : "none",
+                              outlineOffset: "2px",
+                              cursor: disabled ? "default" : "pointer",
                             }}
                             title="Presente"
                             onClick={() => setResponse(p.id, "yes")}
-                            disabled={savingId === p.id}
+                            disabled={disabled}
                           >
                             ✅
                           </button>
+
                           <button
+                            type="button"
                             className="rounded-md border border-theme bg-panel-theme px-2 py-1"
                             style={{
-                                opacity: status === "no" ? 1 : 0.5,
-                                outline: status === "no" ? "2px solid #ef4444" : "none",
-                                outlineOffset: "2px",
+                              opacity: status === "no" ? 1 : 0.5,
+                              outline: status === "no" ? "2px solid #ef4444" : "none",
+                              outlineOffset: "2px",
+                              cursor: disabled ? "default" : "pointer",
                             }}
                             title="Assente"
                             onClick={() => setResponse(p.id, "no")}
-                            disabled={savingId === p.id}
+                            disabled={disabled}
                           >
                             ❌
                           </button>
                         </div>
+
                         <div className="mt-1 text-xs text-muted-theme">
                           {status === "yes" ? "Presente" : status === "no" ? "Assente" : "—"}
-                          {savedId === p.id ? " • Salvato ✅" : ""}
+                          {canEdit && savedId === p.id ? " • Salvato ✅" : ""}
                         </div>
                       </td>
 
                       <td className="px-3 py-2">
                         <input
                           className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
-                          placeholder="Motivo assenza (opzionale)"
+                          placeholder={canEdit ? "Motivo assenza (opzionale)" : "—"}
                           defaultValue={r?.reason ?? ""}
-                          disabled={status !== "no"}
+                          disabled={!canEdit || status !== "no"}
+                          readOnly={!canEdit || status !== "no"}
                           onBlur={(e) => saveReason(p.id, e.target.value)}
                         />
-                        <div className="mt-1 text-xs text-muted-theme">
-                          (salva quando esci dal campo)
-                        </div>
+                        {canEdit ? (
+                          <div className="mt-1 text-xs text-muted-theme">
+                            (salva quando esci dal campo)
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -311,7 +372,8 @@ export default function EventResponsesPage() {
 
       <div className="card p-6">
         <p className="text-sm text-muted-theme">
-          Prossimo step: allegato (certificato/giustificazione) con invio email automatica allo staff.
+          Prossimo step: allegato (certificato/giustificazione) con invio email automatica allo
+          staff.
         </p>
       </div>
     </div>

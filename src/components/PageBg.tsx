@@ -2,19 +2,22 @@
 
 export default function PageBg({
   image = "/bg.jpg",
-  overlay = "rgba(0,0,0,0.55)",
+  overlay,
   children,
 }: {
   image?: string;
   overlay?: string;
   children: React.ReactNode;
 }) {
+  // se non passi overlay, usa la variabile CSS globale
+  const ov = overlay ?? "rgba(0,0,0,var(--page-overlay))";
+
   return (
     <div className="page-bg">
       <div
         className="page-bg__layer"
         style={{
-          backgroundImage: `linear-gradient(${overlay}, ${overlay}), url(${image})`,
+          backgroundImage: `linear-gradient(${ov}, ${ov}), url(${image})`,
         }}
         aria-hidden="true"
       />

@@ -1,6 +1,3 @@
-// ✅ INCOLLA QUESTO FILE COMPLETO (sostituisci TUTTO il tuo file convocazioni)
-// Nota: ho rimosso TUTTO il vecchio blocco iframe/mapTitle/mapQuery (era quello che ti rompeva la compilazione)
-
 "use client";
 
 import Link from "next/link";

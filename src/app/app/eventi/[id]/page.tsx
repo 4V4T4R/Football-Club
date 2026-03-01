@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 
@@ -48,11 +48,40 @@ export default function EventDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ solo staff può modificare convocati
+  const [isStaff, setIsStaff] = useState(false);
+  const canEdit = isStaff;
+
   const selectedCount = useMemo(() => invited.size, [invited]);
 
   async function loadAll() {
     setLoading(true);
     setError(null);
+
+    // ✅ role
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session.session?.user?.id;
+
+    if (!userId) {
+      setError("Utente non autenticato.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: member, error: mbErr } = await supabase
+      .from("club_members")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (mbErr) {
+      setError(mbErr.message);
+      setLoading(false);
+      return;
+    }
+
+    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    setIsStaff(staff);
 
     const { data: evData, error: evErr } = await supabase
       .from("events")
@@ -108,6 +137,7 @@ export default function EventDetailPage() {
   }, [eventId]);
 
   function togglePlayer(pid: string) {
+    if (!canEdit) return; // ✅ inerte se non staff
     setInvited((prev) => {
       const n = new Set(prev);
       if (n.has(pid)) n.delete(pid);
@@ -118,6 +148,7 @@ export default function EventDetailPage() {
 
   async function saveTargets() {
     if (!ev) return;
+    if (!canEdit) return; // ✅ inerte se non staff
 
     setSaving(true);
     setError(null);
@@ -154,6 +185,51 @@ export default function EventDetailPage() {
     router.push("/app/eventi");
   }
 
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+
+  // se vuoi includere solo attivi:
+  const selectablePlayers = useMemo(
+    () => players.filter((p) => p.active),
+    [players]
+  );
+
+  const selectableIds = useMemo(
+    () => selectablePlayers.map((p) => p.id),
+    [selectablePlayers]
+  );
+
+  const allSelected = useMemo(() => {
+    if (selectableIds.length === 0) return false;
+    return selectableIds.every((id) => invited.has(id));
+  }, [selectableIds, invited]);
+
+  const someSelected = useMemo(() => {
+    return selectableIds.some((id) => invited.has(id));
+  }, [selectableIds, invited]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = !allSelected && someSelected;
+  }, [allSelected, someSelected]);
+
+  function toggleAll() {
+    if (!canEdit) return;
+
+    setInvited((prev) => {
+      const next = new Set(prev);
+
+      if (allSelected) {
+        // deselect tutti (solo quelli selezionabili)
+        selectableIds.forEach((id) => next.delete(id));
+      } else {
+        // select tutti (solo quelli selezionabili)
+        selectableIds.forEach((id) => next.add(id));
+      }
+
+      return next;
+    });
+  }
+
   if (loading) return <div className="card p-8">Caricamento…</div>;
   if (!ev) return <div className="card p-8">Evento non disponibile.</div>;
 
@@ -166,6 +242,11 @@ export default function EventDetailPage() {
             <p className="mt-2 text-muted-theme">
               {fmtDateTimeIT(ev.start_at)} {ev.location ? "• " + ev.location : ""}
             </p>
+            {!canEdit ? (
+              <p className="mt-2 text-xs text-muted-theme">
+                Vista sola lettura: solo staff/admin può modificare le convocazioni.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -181,25 +262,49 @@ export default function EventDetailPage() {
               <thead>
                 <tr className="bg-panel-theme">
                   <th className="px-3 py-2 text-left">Giocatore</th>
-                  <th className="px-3 py-2 text-center w-24">Conv.</th>
+                  <th className="px-3 py-2 text-center w-24">
+                    <div className="flex items-center justify-center gap-2">
+                      <span>Conv.</span>
+
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        checked={allSelected}
+                        disabled={!canEdit || selectableIds.length === 0}
+                        onChange={toggleAll}
+                        title={allSelected ? "Deseleziona tutti" : "Seleziona tutti"}
+                        style={{ cursor: !canEdit ? "default" : "pointer" }}
+                      />
+                    </div>
+                  </th>
                 </tr>
               </thead>
+
               <tbody>
                 {players.map((p) => {
                   const checked = invited.has(p.id);
+                  const rowDisabled = !canEdit;
+
                   return (
                     <tr
                       key={p.id}
-                      className={"border-t border-theme " + (p.active ? "" : "opacity-60")}
+                      className={
+                        "border-t border-theme " +
+                        (p.active ? "" : "opacity-60") +
+                        (rowDisabled ? " opacity-90" : "")
+                      }
                     >
                       <td className="px-3 py-2">
                         {p.last_name} {p.first_name} {!p.active ? "(non attivo)" : ""}
                       </td>
+
                       <td className="px-3 py-2 text-center">
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={!canEdit}
                           onChange={() => togglePlayer(p.id)}
+                          style={{ cursor: !canEdit ? "default" : "pointer" }}
                         />
                       </td>
                     </tr>
@@ -220,10 +325,10 @@ export default function EventDetailPage() {
           <button
             className="mt-4 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
             onClick={saveTargets}
-            disabled={saving}
-            style={{ opacity: saving ? 0.7 : 1 }}
+            disabled={saving || !canEdit}
+            style={{ opacity: saving || !canEdit ? 0.7 : 1, cursor: !canEdit ? "default" : "pointer" }}
           >
-            {saving ? "Salvataggio..." : "Salva convocazioni"}
+            {!canEdit ? "Solo staff" : saving ? "Salvataggio..." : "Salva convocazioni"}
           </button>
 
           <p className="mt-3 text-xs text-muted-theme">

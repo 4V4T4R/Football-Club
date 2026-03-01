@@ -1,4 +1,5 @@
-import type { Metadata, Viewport } from "next";
+// src/app/layout.tsx
+import type { Metadata } from "next";
 import "./globals.css";
 import { Inter } from "next/font/google";
 import PublicHeader from "@/components/PublicHeader";
@@ -19,20 +20,20 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-}
+};
 
 export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const h: any = await headers(); // ✅ nel tuo Next è Promise
+  const h: any = await headers();
   const pathname =
     h.get?.("x-invoke-path") ||
     h.get?.("x-matched-path") ||
     h.get?.("next-url") ||
     "";
-    
+
   const isApp = String(pathname).startsWith("/app");
 
   const hideHeader =
@@ -42,12 +43,16 @@ export default async function RootLayout({
 
   return (
     <html lang="it" className={bodyFont.className}>
-      <body>
+      <body className="brand-gradient">
         <InviteRedirect />
 
         {!hideHeader && <PublicHeader />}
 
-        <main className={isApp ? "pt-24" : (hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24")}>
+        <main
+          className={
+            isApp ? "pt-24" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
+          }
+        >
           {children}
         </main>
       </body>
