@@ -190,11 +190,18 @@ a { -webkit-tap-highlight-color: transparent; }
 
 .page-bg__layer {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: -20vh;
+  bottom: -20vh;
   z-index: -1;
+
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  background-color: #0a0a0a;
+
+  transform: translateZ(0);
 }
 
 /* overlay lo gestisce PageBg.tsx con var(--page-overlay) */
@@ -305,4 +312,18 @@ input[type="date"] { display: block; width: 100%; box-sizing: border-box; }
 .title-rule {
   width: clamp(140px, 55vw, 320px);
   height: 1px;
+}
+
+html, body {
+  background: var(--background);
+}
+
+.page-bg {
+  min-height: 100dvh;
+}
+
+@supports not (height: 100dvh) {
+  .page-bg {
+    min-height: 100vh;
+  }
 }

@@ -46,7 +46,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <PageBg image="/assets/auth-bg.jpg">
       <div className="page-bg__content min-h-screen">
-        <div className="mx-auto w-full max-w-7xl px-4 pt-6 md:pt-8 grid gap-6 md:grid-cols-[210px_1fr]">
+        <div className="mx-auto w-full max-w-7xl px-4 pt-1 md:pt-0 grid gap-6 md:grid-cols-[210px_1fr]">
           {/* Sidebar */}
           <aside className="hidden md:block card p-3 md:p-4">
             <nav className="flex gap-2 overflow-x-auto md:block md:space-y-1 md:overflow-visible">

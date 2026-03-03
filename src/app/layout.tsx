@@ -52,7 +52,7 @@ export default async function RootLayout({
 
         <main
           className={
-            isApp ? "pt-20" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
+            isApp ? "" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
           }
         >
           {children}
