@@ -5,6 +5,7 @@ import { Inter } from "next/font/google";
 import PublicHeader from "@/components/PublicHeader";
 import InviteRedirect from "./_components/InviteRedirect";
 import { headers } from "next/headers";
+import ThemeClient from "@/components/ThemeClient";
 
 const bodyFont = Inter({
   subsets: ["latin"],
@@ -45,12 +46,13 @@ export default async function RootLayout({
     <html lang="it" className={bodyFont.className}>
       <body className="brand-gradient">
         <InviteRedirect />
+        <ThemeClient />
 
         {!hideHeader && <PublicHeader />}
 
         <main
           className={
-            isApp ? "pt-24" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
+            isApp ? "pt-20" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
           }
         >
           {children}

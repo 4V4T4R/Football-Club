@@ -465,7 +465,7 @@ export default function PlayersPage() {
             </>
           ) : (
             <>
-              {displayName ? ` ${displayName}` : ""}, qui vedrai la rosa della squadra{" "}
+               {displayName ? ` ${displayName}` : ""}, qui vedrai la rosa della squadra{" "}
               {club?.name ? <b>{club.name}</b> : null}.
             </>
           )}

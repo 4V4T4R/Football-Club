@@ -7,13 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/chi-siamo", label: "Chi siamo" },
-  { href: "/servizi", label: "Servizi" },
-  { href: "/galleria-immagini", label: "Galleria immagini" },
-  { href: "/team", label: "Team" },
-  { href: "/notizie", label: "Notizie" },
-  { href: "/contatti", label: "Contatti" },
+  { href: "https://www.littleclub.it", label: "Home" },
+  { href: "https://www.littleclub.it/chi-siamo", label: "Chi siamo" },
+  { href: "https://www.littleclub.it/servizi", label: "Servizi" },
+  { href: "https://www.littleclub.it/team", label: "Team" },
+  { href: "https://www.littleclub.it/notizie", label: "Notizie" },
+  { href: "https://www.littleclub.it/galleria-immagini", label: "Galleria immagini" },
+  { href: "https://www.littleclub.it/contatti/", label: "Contatti" },
 ];
 
 const APP_NAV = [
@@ -212,7 +212,7 @@ export default function PublicHeader() {
 
                       {isAppSide ? (
                         <Link
-                          href="/"
+                          href="https://www.littleclub.it"
                           className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
                           onClick={() => setOpen(false)}
                         >

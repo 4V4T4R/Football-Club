@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
+/* =========================================================
+   GLOBAL TOKENS
+========================================================= */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-
   --brand: 20 184 166;  /* teal */
   --brand2: 59 130 246; /* blue */
 
@@ -12,32 +12,141 @@
   --glass-sat: 185%;
 
   /* light */
-  --card-alpha-light: 0.58;   /* card più chiara */
-  --panel-alpha-light: 0.52;  /* panel un filo più chiaro */
+  --card-alpha-light: 0.58;
+  --panel-alpha-light: 0.52;
   --badge-alpha-light: 0.50;
 
   /* dark */
   --card-alpha-dark: 0.18;
   --panel-alpha-dark: 0.14;
   --badge-alpha-dark: 0.22;
-
-  /* background overlay (via di mezzo) */
-  --page-overlay: 0.28; /* 0.30–0.40 */
 }
 
+/* =========================================================
+   THEME MODE (system + forced via data-theme)
+   - default: system
+   - forced: <html data-theme="light|dark">
+========================================================= */
+
+/* base = light */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  --page-overlay: 0.28;
+
+  --card-alpha: var(--card-alpha-light);
+  --panel-alpha: var(--panel-alpha-light);
+  --badge-alpha: var(--badge-alpha-light);
+
+  --card-bg-r: 255; --card-bg-g: 255; --card-bg-b: 255;
+  --panel-bg-r: 255; --panel-bg-g: 255; --panel-bg-b: 255;
+  --badge-bg-r: 255; --badge-bg-g: 255; --badge-bg-b: 255;
+
+  --card-border: rgba(255,255,255,0.62);
+  --badge-border: rgba(255,255,255,0.40);
+
+  --card-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+
+  --card-before-a: 0.55;
+  --card-before-top: rgba(255,255,255,0.40);
+  --card-before-bot: rgba(255,255,255,0.06);
+}
+
+/* system dark (solo se NON stai forzando) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --background: #0a0a0a;
     --foreground: #ededed;
 
-    /* ✅ sfondo più scuro SOLO in dark mode */
     --page-overlay: 0.42;
+
+    --card-alpha: var(--card-alpha-dark);
+    --panel-alpha: var(--panel-alpha-dark);
+    --badge-alpha: var(--badge-alpha-dark);
+
+    --card-bg-r: 0; --card-bg-g: 0; --card-bg-b: 0;
+    --panel-bg-r: 0; --panel-bg-g: 0; --panel-bg-b: 0;
+    --badge-bg-r: 0; --badge-bg-g: 0; --badge-bg-b: 0;
+
+    --card-border: rgba(255,255,255,0.18);
+    --badge-border: rgba(255,255,255,0.20);
+
+    --card-shadow:
+      0 18px 52px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+    --card-before-a: 0.35;
+    --card-before-top: rgba(255,255,255,0.18);
+    --card-before-bot: rgba(255,255,255,0.02);
   }
 }
+
+/* forced light */
+:root[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  --page-overlay: 0.28;
+
+  --card-alpha: var(--card-alpha-light);
+  --panel-alpha: var(--panel-alpha-light);
+  --badge-alpha: var(--badge-alpha-light);
+
+  --card-bg-r: 255; --card-bg-g: 255; --card-bg-b: 255;
+  --panel-bg-r: 255; --panel-bg-g: 255; --panel-bg-b: 255;
+  --badge-bg-r: 255; --badge-bg-g: 255; --badge-bg-b: 255;
+
+  --card-border: rgba(255,255,255,0.62);
+  --badge-border: rgba(255,255,255,0.40);
+
+  --card-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+
+  --card-before-a: 0.55;
+  --card-before-top: rgba(255,255,255,0.40);
+  --card-before-bot: rgba(255,255,255,0.06);
+}
+
+/* forced dark */
+:root[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  --page-overlay: 0.42;
+
+  --card-alpha: var(--card-alpha-dark);
+  --panel-alpha: var(--panel-alpha-dark);
+  --badge-alpha: var(--badge-alpha-dark);
+
+  --card-bg-r: 0; --card-bg-g: 0; --card-bg-b: 0;
+  --panel-bg-r: 0; --panel-bg-g: 0; --panel-bg-b: 0;
+  --badge-bg-r: 0; --badge-bg-g: 0; --badge-bg-b: 0;
+
+  --card-border: rgba(255,255,255,0.18);
+  --badge-border: rgba(255,255,255,0.20);
+
+  --card-shadow:
+    0 18px 52px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --card-before-a: 0.35;
+  --card-before-top: rgba(255,255,255,0.18);
+  --card-before-bot: rgba(255,255,255,0.02);
+}
+
+/* =========================================================
+   BASE ELEMENTS
+========================================================= */
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
 }
 
 @theme inline {
@@ -49,35 +158,35 @@ body {
 
 a { -webkit-tap-highlight-color: transparent; }
 
+/* pagina pubblica / body class */
 .brand-gradient {
   background: radial-gradient(900px circle at 10% 10%, rgba(var(--brand), .18), transparent 60%),
               radial-gradient(900px circle at 90% 30%, rgba(var(--brand2), .14), transparent 55%),
               linear-gradient(to bottom, #ffffff, #f8fafc);
 }
 
-.btn-primary {
-  background: rgb(var(--brand));
-  color: white;
-}
+.btn-primary { background: rgb(var(--brand)); color: white; }
 .btn-primary:hover { filter: brightness(.95); }
 
-/* =========================
-   Base theme helpers
-========================= */
+/* =========================================================
+   HELPERS (colori coerenti col tema)
+========================================================= */
 .text-base-theme { color: var(--foreground); }
-.text-muted-theme { color: color-mix(in srgb, var(--foreground) 70%, transparent); }
+.text-muted-theme { color: color-mix(in srgb, var(--foreground) 70%, transparent); opacity: 1; }
 
 .border-theme { border-color: color-mix(in srgb, var(--foreground) 18%, transparent); }
-.bg-panel-theme { background: color-mix(in srgb, var(--background) 92%, var(--foreground) 8%); }
+.bg-panel-theme { background: rgba(var(--panel-bg-r), var(--panel-bg-g), var(--panel-bg-b), var(--panel-alpha)); }
 
-/* =========================
-   Background SOLO dove usi <PageBg>
-   (NON tocca l'immagine: quella arriva da style=... in PageBg.tsx)
-========================= */
-.page-bg {
-  position: relative;
-  min-height: 100vh;
+/* titoli/link dentro card seguono sempre il testo base */
+.card h1, .card h2, .card h3, .card h4,
+.card strong, .card b, .card a {
+  color: var(--foreground);
 }
+
+/* =========================================================
+   BACKGROUND (PageBg)
+========================================================= */
+.page-bg { position: relative; min-height: 100vh; }
 
 .page-bg__layer {
   position: fixed;
@@ -88,37 +197,32 @@ a { -webkit-tap-highlight-color: transparent; }
   background-repeat: no-repeat;
 }
 
-/* overlay scuro sopra lo sfondo */
+/* overlay lo gestisce PageBg.tsx con var(--page-overlay) */
 .page-bg__layer::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: transparent; /* overlay gestito da PageBg.tsx */
+  background: transparent;
   pointer-events: none;
 }
 
-.page-bg__content {
-  position: relative;
-  z-index: 0;
-}
+.page-bg__content { position: relative; z-index: 0; }
 
-/* =========================
+/* =========================================================
    GLASS (card / panel / badge)
-   (questa sezione SOSTITUISCE tutte le vecchie .card duplicate)
-========================= */
+========================================================= */
 .card {
   position: relative;
 
-  background: rgba(255, 255, 255, var(--card-alpha-light));
+  background: rgba(var(--card-bg-r), var(--card-bg-g), var(--card-bg-b), var(--card-alpha));
+
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 
-  border: 1px solid rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--card-border);
   border-radius: 18px;
 
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.10),
-    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  box-shadow: var(--card-shadow);
 }
 
 .card::before {
@@ -127,72 +231,37 @@ a { -webkit-tap-highlight-color: transparent; }
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0.40),
-    rgba(255,255,255,0.06)
-  );
-  opacity: 0.55;
+  background: linear-gradient(to bottom, var(--card-before-top), var(--card-before-bot));
+  opacity: var(--card-before-a);
 }
 
 .bg-panel-theme {
-  background: rgba(255, 255, 255, var(--panel-alpha-light));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.75)) saturate(var(--glass-sat));
   backdrop-filter: blur(calc(var(--glass-blur) * 0.75)) saturate(var(--glass-sat));
   border-radius: 14px;
 }
 
 .badge {
-  border: 1px solid rgba(255, 255, 255, 0.40);
-  background: rgba(255, 255, 255, var(--badge-alpha-light));
+  border: 1px solid var(--badge-border);
+  background: rgba(var(--badge-bg-r), var(--badge-bg-g), var(--badge-bg-b), var(--badge-alpha));
   -webkit-backdrop-filter: blur(14px) saturate(170%);
   backdrop-filter: blur(14px) saturate(170%);
 }
 
-@media (prefers-color-scheme: dark) {
-  .card {
-    background: rgba(0, 0, 0, var(--card-alpha-dark));
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    box-shadow:
-      0 18px 52px rgba(0, 0, 0, 0.55),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
-  .bg-panel-theme {
-    background: rgba(0, 0, 0, var(--panel-alpha-dark));
-  }
-
-  .badge {
-    border: 1px solid rgba(255, 255, 255, 0.20);
-    background: rgba(0, 0, 0, var(--badge-alpha-dark));
-  }
-}
-
-/* =========================
-   Contrasto testo (LIGHT): nero leggibile
-========================= */
-@media (prefers-color-scheme: light) {
-  .text-base-theme { color: #0b0b0b; }
-  .text-muted-theme { color: #1b1b1b; opacity: 1; }
-
-  /* titoli/strong dentro card sempre neri */
-  .card h1, .card h2, .card h3, .card h4,
-  .card strong, .card b, .card a {
-    color: #0b0b0b;
-  }
-}
-
-/* =========================
-   Fallback: niente color-mix / backdrop-filter
-========================= */
+/* =========================================================
+   FALLBACKS
+========================================================= */
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .card { background: rgba(255,255,255,0.88); }
   .bg-panel-theme { background: rgba(255,255,255,0.75); }
 
   @media (prefers-color-scheme: dark) {
-    .card { background: rgba(0,0,0,0.35); }
-    .bg-panel-theme { background: rgba(0,0,0,0.25); }
+    :root:not([data-theme="light"]):not([data-theme="dark"]) .card { background: rgba(0,0,0,0.35); }
+    :root:not([data-theme="light"]):not([data-theme="dark"]) .bg-panel-theme { background: rgba(0,0,0,0.25); }
   }
+
+  :root[data-theme="dark"] .card { background: rgba(0,0,0,0.35); }
+  :root[data-theme="dark"] .bg-panel-theme { background: rgba(0,0,0,0.25); }
 }
 
 @supports not (color: color-mix(in srgb, white 50%, black)) {
@@ -200,12 +269,9 @@ a { -webkit-tap-highlight-color: transparent; }
   .border-theme { border-color: rgba(127,127,127,0.35); }
 }
 
-/* =========================
+/* =========================================================
    iOS input fixes
-========================= */
-html { -webkit-text-size-adjust: 100%; }
-body { overflow-x: hidden; }
-
+========================================================= */
 input[type="date"]{
   -webkit-appearance: none;
   appearance: none;

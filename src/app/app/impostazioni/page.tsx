@@ -1,8 +1,9 @@
-// app/app/impostazioni/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
+import { setThemePref } from "@/components/ThemeClient";
 
 type Club = { id: string; name: string; slug: string };
 
@@ -33,9 +34,11 @@ type MemberRow = {
   birth_date: string | null;
 };
 
+type ThemePref = "system" | "light" | "dark";
+
 function fmtDateIT(isoOrYmd: string | null | undefined) {
   if (!isoOrYmd) return "—";
-  const s = isoOrYmd.includes("T") ? isoOrYmd.split("T")[0] : isoOrYmd; // YYYY-MM-DD
+  const s = isoOrYmd.includes("T") ? isoOrYmd.split("T")[0] : isoOrYmd;
   const parts = s.split("-");
   if (parts.length !== 3) return "—";
   const [y, m, d] = parts;
@@ -54,7 +57,6 @@ function fmtDateTimeIT(iso: string | null | undefined) {
   }).format(d);
 }
 
-/** ✅ se è un giocatore, mostriamo "Giocatore" (in futuro: ruolo di campo) */
 function roleLabel(memberRole: string | null, isPlayer: boolean) {
   if (isPlayer) return "Giocatore";
   if (!memberRole) return "—";
@@ -65,13 +67,15 @@ function roleLabel(memberRole: string | null, isPlayer: boolean) {
 }
 
 export default function Page() {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
 
-  // messaggi globali (profilo, reset email, ecc.)
+  // messaggi globali
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // messaggi SOLO password (da mostrare nel box password)
+  // messaggi SOLO password
   const [pwdError, setPwdError] = useState<string | null>(null);
   const [pwdOk, setPwdOk] = useState<string | null>(null);
 
@@ -79,15 +83,17 @@ export default function Page() {
   const [member, setMember] = useState<MemberRow | null>(null);
   const [player, setPlayer] = useState<PlayerRow | null>(null);
   const [userRow, setUserRow] = useState<UserRow | null>(null);
-
   const [authEmail, setAuthEmail] = useState<string | null>(null);
 
-  // edit profilo (solo staff/admin)
+  // PROFILO (sola lettura + Modifica/Salva)
+  const [profileEditing, setProfileEditing] = useState(false);
   const [editFirst, setEditFirst] = useState("");
   const [editLast, setEditLast] = useState("");
+  const [editBirth, setEditBirth] = useState<string>(""); // YYYY-MM-DD, opzionale
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // password
+  // password (nel modal)
+  const [pwdOpen, setPwdOpen] = useState(false);
   const [oldPwd, setOldPwd] = useState("");
   const [pwd1, setPwd1] = useState("");
   const [pwd2, setPwd2] = useState("");
@@ -103,14 +109,29 @@ export default function Page() {
   // reset email
   const [sendingReset, setSendingReset] = useState(false);
 
+  // popup notifiche / tema
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [themePref, setThemePrefState] = useState<ThemePref>("system");
+
   const isStaffOrAdmin = useMemo(() => {
     return ["admin", "staff"].includes(member?.role ?? "");
   }, [member?.role]);
 
+  const isAdmin = useMemo(() => member?.role === "admin", [member?.role]);
+
   const canSaveProfile = useMemo(() => {
     if (!isStaffOrAdmin) return false;
-    return editFirst.trim().length > 0 || editLast.trim().length > 0;
-  }, [isStaffOrAdmin, editFirst, editLast]);
+    if (!profileEditing) return false;
+
+    // consenti anche solo nascita
+    const changed =
+      (editFirst ?? "") !== (userRow?.first_name ?? "") ||
+      (editLast ?? "") !== (userRow?.last_name ?? "") ||
+      (editBirth ?? "") !== (member?.birth_date ?? "");
+
+    return changed;
+  }, [isStaffOrAdmin, profileEditing, editFirst, editLast, editBirth, userRow, member]);
 
   const score = useMemo(() => passwordScore(pwd1), [pwd1]);
 
@@ -132,6 +153,14 @@ export default function Page() {
     if (pwd1 !== pwd2) return false;
     return true;
   }, [isLocked, oldPwd, pwd1, pwd2]);
+
+  const inputClass =
+    "w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm";
+
+  function loadThemePref() {
+    const v = (localStorage.getItem("theme_pref") as ThemePref) || "system";
+    setThemePrefState(v);
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -176,7 +205,9 @@ export default function Page() {
       setLoading(false);
       return;
     }
+
     setMember((m as MemberRow | null) ?? null);
+    setEditBirth(m?.birth_date ?? "");
 
     const { data: p, error: pErr } = await supabase
       .from("players")
@@ -189,6 +220,7 @@ export default function Page() {
       setLoading(false);
       return;
     }
+
     setPlayer((p as PlayerRow | null) ?? null);
 
     const clubId =
@@ -208,6 +240,7 @@ export default function Page() {
         setLoading(false);
         return;
       }
+
       setClub((c as Club | null) ?? null);
     } else {
       setClub(null);
@@ -218,7 +251,22 @@ export default function Page() {
 
   useEffect(() => {
     loadAll();
+    loadThemePref();
   }, []);
+
+  function startEditProfile() {
+    if (!isStaffOrAdmin) return;
+    setProfileEditing(true);
+    setOk(null);
+    setError(null);
+  }
+
+  function cancelEditProfile() {
+    setProfileEditing(false);
+    setEditFirst(userRow?.first_name ?? "");
+    setEditLast(userRow?.last_name ?? "");
+    setEditBirth(member?.birth_date ?? "");
+  }
 
   async function saveProfile() {
     if (!isStaffOrAdmin) return;
@@ -228,12 +276,15 @@ export default function Page() {
     setError(null);
     setOk(null);
 
-    const payload: Partial<UserRow> = {
-      first_name: editFirst.trim() ? editFirst.trim() : null,
-      last_name: editLast.trim() ? editLast.trim() : null,
-    };
+    const first = editFirst.trim() ? editFirst.trim() : null;
+    const last = editLast.trim() ? editLast.trim() : null;
+    const birth = editBirth.trim() ? editBirth.trim() : null;
 
-    const { error: updErr } = await supabase.from("users").update(payload).eq("id", userRow.id);
+    // 1) users (nome/cognome)
+    const { error: updErr } = await supabase
+      .from("users")
+      .update({ first_name: first, last_name: last })
+      .eq("id", userRow.id);
 
     if (updErr) {
       setError(updErr.message);
@@ -241,8 +292,40 @@ export default function Page() {
       return;
     }
 
+    // 2) club_members.birth_date (staff)
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session.session?.user?.id ?? null;
+
+    if (userId) {
+      const { error: updMemberErr } = await supabase
+        .from("club_members")
+        .update({ birth_date: birth })
+        .eq("user_id", userId);
+
+      if (updMemberErr) {
+        setError(updMemberErr.message);
+        setSavingProfile(false);
+        return;
+      }
+
+      // 3) se è anche player: aggiorna anche players.birth_date (coerenza)
+      if (player?.id && birth) {
+        const { error: updPlayerErr } = await supabase
+          .from("players")
+          .update({ birth_date: birth })
+          .eq("id", player.id);
+
+        if (updPlayerErr) {
+          setError(updPlayerErr.message);
+          setSavingProfile(false);
+          return;
+        }
+      }
+    }
+
     setOk("Profilo aggiornato.");
     setSavingProfile(false);
+    setProfileEditing(false);
     await loadAll();
   }
 
@@ -250,8 +333,6 @@ export default function Page() {
     if (!canSavePwd) return;
 
     setSavingPwd(true);
-
-    // messaggi password SOLO nel box password
     setPwdError(null);
     setPwdOk(null);
 
@@ -285,7 +366,6 @@ export default function Page() {
       return;
     }
 
-    // re-auth ok
     setPwdAttempts(0);
     setPwdLockedUntil(null);
 
@@ -316,8 +396,7 @@ export default function Page() {
     setOk(null);
 
     const { error: rErr } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo:
-        typeof window !== "undefined" ? window.location.origin + "/imposta-password" : undefined,
+      redirectTo: typeof window !== "undefined" ? window.location.origin + "/imposta-password" : undefined,
     });
 
     if (rErr) {
@@ -354,6 +433,17 @@ export default function Page() {
     return `${s}s`;
   }
 
+  function themeLabel(v: ThemePref) {
+    if (v === "system") return "Tema Sistema";
+    if (v === "light") return "Chiaro";
+    return "Oscuro";
+  }
+
+  function applyThemeChoice(v: ThemePref) {
+    setThemePrefState(v);
+    setThemePref(v);
+  }
+
   if (loading) return <div className="card p-8">Caricamento…</div>;
 
   return (
@@ -366,59 +456,87 @@ export default function Page() {
         {ok && <p className="mt-4 text-sm text-emerald-600">{ok}</p>}
       </div>
 
-      {/* RIGA 1 (desktop): PROFILO | SQUADRA */}
+      {/* RIGA 1: PROFILO | SQUADRA */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* PROFILO */}
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
-          <p className="mt-1 text-sm text-muted-theme">
-            {isStaffOrAdmin
-              ? "Puoi modificare nome e cognome (solo staff/admin)."
-              : "Nome e cognome modificabili solo dallo staff."}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
+            </div>
+
+            {isStaffOrAdmin && !profileEditing ? (
+              <button
+                type="button"
+                className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                onClick={startEditProfile}
+              >
+                Modifica
+              </button>
+            ) : null}
+          </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-muted-theme">Nome</label>
               <input
-                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                className={inputClass}
                 value={editFirst}
                 onChange={(e) => setEditFirst(e.target.value)}
-                disabled={!isStaffOrAdmin}
+                disabled={!isStaffOrAdmin || !profileEditing}
               />
             </div>
 
             <div>
               <label className="mb-1 block text-xs text-muted-theme">Cognome</label>
               <input
-                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                className={inputClass}
                 value={editLast}
                 onChange={(e) => setEditLast(e.target.value)}
-                disabled={!isStaffOrAdmin}
+                disabled={!isStaffOrAdmin || !profileEditing}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs text-muted-theme">Data di nascita</label>
+              <input
+                type="date"
+                className={inputClass}
+                value={editBirth}
+                onChange={(e) => setEditBirth(e.target.value)}
+                disabled={!isStaffOrAdmin || !profileEditing}
               />
             </div>
 
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-muted-theme">Email</label>
-              <input
-                className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm opacity-80"
-                value={authEmail ?? userRow?.email ?? ""}
-                readOnly
-              />
+              <input className={`${inputClass} opacity-80`} value={authEmail ?? userRow?.email ?? ""} readOnly />
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-              onClick={saveProfile}
-              disabled={!canSaveProfile || savingProfile}
-              style={{ opacity: !canSaveProfile || savingProfile ? 0.6 : 1 }}
-            >
-              {savingProfile ? "Salvataggio..." : "Salva profilo"}
-            </button>
-          </div>
+          {isStaffOrAdmin && profileEditing ? (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                onClick={saveProfile}
+                disabled={!canSaveProfile || savingProfile}
+                style={{ opacity: !canSaveProfile || savingProfile ? 0.6 : 1 }}
+              >
+                {savingProfile ? "Salvataggio..." : "Salva"}
+              </button>
+
+              <button
+                type="button"
+                className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                onClick={cancelEditProfile}
+                disabled={savingProfile}
+                style={{ opacity: savingProfile ? 0.6 : 1 }}
+              >
+                Annulla
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {/* SQUADRA */}
@@ -446,179 +564,361 @@ export default function Page() {
                   <div className="mt-1 text-xs text-muted-theme">Nascita:</div>
                   <div className="mt-1 text-base-theme font-medium">{fmtDateIT(player.birth_date)}</div>
                   <div className="mt-1 text-xs text-muted-theme">Maglia:</div>
-                  <div className="mt-1 text-base-theme font-medium">{player.shirt_number ?? "—"}</div>                  
+                  <div className="mt-1 text-base-theme font-medium">{player.shirt_number ?? "—"}</div>
                 </div>
               )}
             </div>
 
             <div>
               <div className="text-xs text-muted-theme">Account creato</div>
-              <div className="mt-1 text-base-theme font-medium">
-                {fmtDateTimeIT(userRow?.created_at ?? null)}
-              </div>
+              <div className="mt-1 text-base-theme font-medium">{fmtDateTimeIT(userRow?.created_at ?? null)}</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* RIGA 2 (desktop): PASSWORD | IN ARRIVO */}
+      {/* RIGA 2: AZIONI (Staff/Password/Notifiche/Tema) | IN ARRIVO */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* PASSWORD */}
+        {/* AZIONI */}
         <div className="card p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-base-theme">Password</h2>
-              <p className="mt-1 text-sm text-muted-theme">
-                Per sicurezza richiediamo la password attuale.
-              </p>
-            </div>
+          <h2 className="text-lg font-semibold text-base-theme">Info e Preferenze</h2>
+          <p className="mt-1 text-sm text-muted-theme">Gestisci le funzioni del tuo account.</p>
 
-            {isLocked && (
-              <div className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-xs text-muted-theme">
-                Bloccato: {formatSecondsLeft(lockLeft)}
-              </div>
-            )}
-          </div>
-
-          {pwdError && <p className="mt-3 text-sm text-rose-500">{pwdError}</p>}
-          {pwdOk && <p className="mt-3 text-sm text-emerald-500">{pwdOk}</p>}
-
-          {/* ✅ input lunghi uguali: rendiamo i due campi sotto in colonna su desktop */}
           <div className="mt-4 space-y-3">
-            {/* Password attuale */}
-            <div>
-              <label className="mb-1 block text-xs text-muted-theme">Password attuale</label>
-              <div className="flex gap-2">
-                <input
-                  type={showOld ? "text" : "password"}
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  value={oldPwd}
-                  onChange={(e) => setOldPwd(e.target.value)}
-                  placeholder="Inserisci la password attuale"
-                  disabled={savingPwd || isLocked}
-                />
-                <button
-                  type="button"
-                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                  onClick={() => setShowOld((v) => !v)}
-                  disabled={savingPwd}
-                  title={showOld ? "Nascondi" : "Mostra"}
-                >
-                  {showOld ? "🙈" : "👁️"}
-                </button>
-              </div>
-            </div>
-
-            {/* Nuova password */}
-            <div>
-              <label className="mb-1 block text-xs text-muted-theme">Nuova password</label>
-              <div className="flex gap-2">
-                <input
-                  type={showNew ? "text" : "password"}
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  value={pwd1}
-                  onChange={(e) => setPwd1(e.target.value)}
-                  placeholder="Minimo 8 caratteri"
-                  disabled={savingPwd || isLocked}
-                />
-                <button
-                  type="button"
-                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                  onClick={() => setShowNew((v) => !v)}
-                  disabled={savingPwd}
-                  title={showNew ? "Nascondi" : "Mostra"}
-                >
-                  {showNew ? "🙈" : "👁️"}
-                </button>
-              </div>
-
-              <div className="mt-2 rounded-md border border-theme bg-panel-theme px-3 py-2">
-                <div className="flex items-center justify-between text-xs text-muted-theme">
-                  <span>
-                    Sicurezza: <b className="text-base-theme">{passwordLabel(score)}</b>
-                  </span>
-                  <span>{score}/5</span>
-                </div>
-                <div className="mt-2 h-2 w-full rounded bg-black/20 overflow-hidden">
-                  <div
-                    className="h-2 rounded bg-emerald-500"
-                    style={{ width: `${(score / 5) * 100}%` }}
-                  />
-                </div>
-                <div className="mt-2 text-[11px] text-muted-theme">
-                  Suggerimento: usa maiuscole, numeri e simboli.
-                </div>
-              </div>
-            </div>
-
-            {/* Conferma password */}
-            <div>
-              <label className="mb-1 block text-xs text-muted-theme">Conferma password</label>
-              <div className="flex gap-2">
-                <input
-                  type={showConfirm ? "text" : "password"}
-                  className="w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
-                  value={pwd2}
-                  onChange={(e) => setPwd2(e.target.value)}
-                  placeholder="Ripeti password"
-                  disabled={savingPwd || isLocked}
-                />
-                <button
-                  type="button"
-                  className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
-                  onClick={() => setShowConfirm((v) => !v)}
-                  disabled={savingPwd}
-                  title={showConfirm ? "Nascondi" : "Mostra"}
-                >
-                  {showConfirm ? "🙈" : "👁️"}
-                </button>
-              </div>
-
-              {pwd2 && pwd1 !== pwd2 && (
-                <div className="mt-2 text-xs text-rose-500">Le password non coincidono.</div>
-              )}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="mt-4 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-            onClick={changePassword}
-            disabled={!canSavePwd || savingPwd}
-            style={{ opacity: canSavePwd && !savingPwd ? 1 : 0.6 }}
-          >
-            {savingPwd ? "Aggiornamento..." : "Aggiorna password"}
-          </button>
-
-          <div className="mt-4">
+            {/* STAFF */}
             <button
               type="button"
-              className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
-              onClick={sendResetEmail}
-              disabled={sendingReset}
-              style={{ opacity: sendingReset ? 0.6 : 1 }}
+              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
+              onClick={() => router.push("/app/staff")}
             >
-              {sendingReset ? "Invio..." : "Ho dimenticato la password (email reset)"}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-base-theme">Staff</div>
+                  <div className="mt-1 text-xs text-muted-theme">Qui puoi vedere il tuo staff</div>
+                </div>
+                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
+                  →
+                </div>
+              </div>
             </button>
+
+            {/* PASSWORD */}
+            <button
+              type="button"
+              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
+              onClick={() => {
+                setPwdError(null);
+                setPwdOk(null);
+                setPwdOpen(true);
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-base-theme">Password</div>
+                  <div className="mt-1 text-xs text-muted-theme">Qui puoi modificare la tua password</div>
+                </div>
+                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
+                  →
+                </div>
+              </div>
+            </button>
+
+            {/* NOTIFICHE */}
+            <button
+              type="button"
+              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
+              onClick={() => setNotifOpen(true)}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-base-theme">Notifiche</div>
+                  <div className="mt-1 text-xs text-muted-theme">Qui potrai gestire le tue notifiche</div>
+                </div>
+                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
+                  →
+                </div>
+              </div>
+            </button>
+
+            {/* TEMA */}
+            <button
+              type="button"
+              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
+              onClick={() => {
+                loadThemePref();
+                setThemeOpen(true);
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-base-theme">Tema</div>
+                  <div className="mt-1 text-xs text-muted-theme">{themeLabel(themePref)}</div>
+                </div>
+                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
+                  →
+                </div>
+              </div>
+            </button>
+
+            {isAdmin ? (
+              <div className="text-[11px] text-muted-theme">
+                Nota: solo l’Admin può creare/eliminare membri dello staff.
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {/* IN ARRIVO */}
+        {/* IN ARRIVO (come tuo) */}
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-base-theme">In arrivo</h2>
           <ul className="mt-3 space-y-2 text-sm text-muted-theme">
-            <li>• Notifiche (solo admin per regole globali)</li>
-            <li>• Privacy (consensi, export dati, gestione allegati)</li>
-            <li>• Gestione membri (aggiungi staff, disattiva/gestisci giocatori)</li>
-            <li>• Tema app (solo admin)</li>
+            <li>• Notifiche (solo admin per regole globali)...</li>
+            <li>• Privacy (consensi, export dati, gestione allegati)...</li>
+            <li>• Gestione membri (aggiungi staff, disattiva/gestisci giocatori)✅</li>
+            <li>• Tema app per utente ✅</li>
           </ul>
 
           <p className="mt-4 text-xs text-muted-theme">
-            Nota per Raffaele: dopo quasi un mese questo è già una base semifunzionante, ci vorra del tempo per
+            Nota per Raffaele: dopo un mese questo è già una base semifunzionante, ci vorra del altro tempo per testarla e
             perfezionarla 🥲.
           </p>
         </div>
       </div>
+
+      {/* ===== MODAL PASSWORD ===== */}
+      {pwdOpen && (
+        <div className="fixed inset-0 z-[80]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi"
+            onClick={() => setPwdOpen(false)}
+          />
+
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-base-theme">Password</h2>
+                  <p className="mt-1 text-sm text-muted-theme">Per sicurezza richiediamo la password attuale.</p>
+                </div>
+
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                  onClick={() => setPwdOpen(false)}
+                  title="Chiudi"
+                >
+                  ✖️
+                </button>
+              </div>
+
+              {isLocked && (
+                <div className="mt-3 rounded-md border border-theme bg-panel-theme px-3 py-2 text-xs text-muted-theme">
+                  Bloccato: {formatSecondsLeft(lockLeft)}
+                </div>
+              )}
+
+              {pwdError && <p className="mt-3 text-sm text-rose-500">{pwdError}</p>}
+              {pwdOk && <p className="mt-3 text-sm text-emerald-500">{pwdOk}</p>}
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Password attuale</label>
+                  <div className="flex gap-2">
+                    <input
+                      type={showOld ? "text" : "password"}
+                      className={inputClass}
+                      value={oldPwd}
+                      onChange={(e) => setOldPwd(e.target.value)}
+                      placeholder="Inserisci la password attuale"
+                      disabled={savingPwd || isLocked}
+                    />
+                    <button
+                      type="button"
+                      className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                      onClick={() => setShowOld((v) => !v)}
+                      disabled={savingPwd}
+                      title={showOld ? "Nascondi" : "Mostra"}
+                    >
+                      {showOld ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Nuova password</label>
+                  <div className="flex gap-2">
+                    <input
+                      type={showNew ? "text" : "password"}
+                      className={inputClass}
+                      value={pwd1}
+                      onChange={(e) => setPwd1(e.target.value)}
+                      placeholder="Minimo 8 caratteri"
+                      disabled={savingPwd || isLocked}
+                    />
+                    <button
+                      type="button"
+                      className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                      onClick={() => setShowNew((v) => !v)}
+                      disabled={savingPwd}
+                      title={showNew ? "Nascondi" : "Mostra"}
+                    >
+                      {showNew ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+
+                  <div className="mt-2 rounded-md border border-theme bg-panel-theme px-3 py-2">
+                    <div className="flex items-center justify-between text-xs text-muted-theme">
+                      <span>
+                        Sicurezza: <b className="text-base-theme">{passwordLabel(score)}</b>
+                      </span>
+                      <span>{score}/5</span>
+                    </div>
+                    <div className="mt-2 h-2 w-full rounded bg-black/20 overflow-hidden">
+                      <div className="h-2 rounded bg-emerald-500" style={{ width: `${(score / 5) * 100}%` }} />
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-theme">
+                      Suggerimento: usa maiuscole, numeri e simboli.
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Conferma password</label>
+                  <div className="flex gap-2">
+                    <input
+                      type={showConfirm ? "text" : "password"}
+                      className={inputClass}
+                      value={pwd2}
+                      onChange={(e) => setPwd2(e.target.value)}
+                      placeholder="Ripeti password"
+                      disabled={savingPwd || isLocked}
+                    />
+                    <button
+                      type="button"
+                      className="h-11 shrink-0 rounded-md border border-theme bg-panel-theme px-3 text-sm"
+                      onClick={() => setShowConfirm((v) => !v)}
+                      disabled={savingPwd}
+                      title={showConfirm ? "Nascondi" : "Mostra"}
+                    >
+                      {showConfirm ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+
+                  {pwd2 && pwd1 !== pwd2 && (
+                    <div className="mt-2 text-xs text-rose-500">Le password non coincidono.</div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="mt-4 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                onClick={changePassword}
+                disabled={!canSavePwd || savingPwd}
+                style={{ opacity: canSavePwd && !savingPwd ? 1 : 0.6 }}
+              >
+                {savingPwd ? "Aggiornamento..." : "Aggiorna password"}
+              </button>
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                  onClick={sendResetEmail}
+                  disabled={sendingReset}
+                  style={{ opacity: sendingReset ? 0.6 : 1 }}
+                >
+                  {sendingReset ? "Invio..." : "Ho dimenticato la password (email reset)"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL NOTIFICHE ===== */}
+      {notifOpen && (
+        <div className="fixed inset-0 z-[80]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi"
+            onClick={() => setNotifOpen(false)}
+          />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-base-theme">Notifiche</h2>
+                  <p className="mt-1 text-sm text-muted-theme">Attualmente stiamo lavorando su questa nuova funzione.</p>
+                </div>
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                  onClick={() => setNotifOpen(false)}
+                  title="Chiudi"
+                >
+                  ✖️
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL TEMA ===== */}
+      {themeOpen && (
+        <div className="fixed inset-0 z-[80]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi"
+            onClick={() => setThemeOpen(false)}
+          />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-base-theme">Tema</h2>
+                  <p className="mt-1 text-sm text-muted-theme">Scegli come vuoi vedere l’app.</p>
+                </div>
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                  onClick={() => setThemeOpen(false)}
+                  title="Chiudi"
+                >
+                  ✖️
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                {(["system", "light", "dark"] as ThemePref[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className="w-full rounded-xl border border-theme bg-panel-theme px-4 py-3 text-left"
+                    onClick={() => applyThemeChoice(v)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-base-theme font-medium">
+                        {v === "system" ? "Sistema" : v === "light" ? "Chiaro" : "Oscuro"}
+                      </div>
+                      <div className="text-sm text-muted-theme">{themePref === v ? "✓" : ""}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 text-xs text-muted-theme">
+                Questa scelta è salvata solo per te su questo dispositivo (localStorage).
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
