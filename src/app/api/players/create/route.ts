@@ -11,6 +11,9 @@ export async function POST(req: Request) {
       club_id,
       birth_date,
       shirt_number,
+      role,
+      phone,
+      matricola
     } = body;
 
     if (!club_id || !first_name || !last_name || !birth_date) {
@@ -70,12 +73,15 @@ export async function POST(req: Request) {
     // 3) players (se userId è null => player “senza login”)
     // Se preferisci OBBLIGARE sempre l’email, dimmelo e lo rendiamo required.
     const { error: playerErr } = await supabaseAdmin.from("players").insert({
-      user_id: userId, // può essere null
+      user_id: userId,
       club_id,
       first_name,
       last_name,
-      birth_date, // IMPORTANT
+      birth_date,
       shirt_number: shirt_number ?? null,
+      role: role ?? null,
+      phone: phone ?? null,
+      matricola: matricola ?? null,
       active: true,
     });
 

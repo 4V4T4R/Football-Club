@@ -1,62 +1,117 @@
-// src/app/layout.tsx
-import type { Metadata } from "next";
+"use client";
+
 import "./globals.css";
 import { Inter } from "next/font/google";
-import PublicHeader from "@/components/PublicHeader";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import PageBg from "@/components/PageBg";
 import InviteRedirect from "./_components/InviteRedirect";
-import { headers } from "next/headers";
 import ThemeClient from "@/components/ThemeClient";
+import PublicHeader from "@/components/PublicHeader";
 
 const bodyFont = Inter({
   subsets: ["latin"],
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "Little Club James",
-  description: "Sito e gestionale per società calcistica",
-};
+const NAV = [
+  { href: "/", label: "Dashboard" },
+  { href: "/giocatori", label: "Giocatori" },
+  { href: "/eventi", label: "Calendario (Eventi)" },
+  { href: "/convocazioni", label: "Convocazioni" },
+  { href: "/impostazioni", label: "Impostazioni" },
+];
 
-export const viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-};
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const h: any = await headers();
-  const pathname =
-    h.get?.("x-invoke-path") ||
-    h.get?.("x-matched-path") ||
-    h.get?.("next-url") ||
-    "";
+  const pathname = usePathname();
+  const router = useRouter();
 
-  const isApp = String(pathname).startsWith("/app");
+  const [loading, setLoading] = useState(true);
 
-  const hideHeader =
-    isApp ||
-    String(pathname).startsWith("/imposta-password") ||
-    String(pathname).startsWith("/auth");
+  const isAuthPage =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/imposta-password");
+
+  useEffect(() => {
+    async function boot() {
+      const { data } = await supabase.auth.getSession();
+
+      if (!data.session && !isAuthPage) {
+        router.replace("/login");
+        return;
+      }
+
+      setLoading(false);
+    }
+
+    boot();
+  }, [pathname, router, isAuthPage]);
+
+  if (loading) {
+    return (
+      <html lang="it" className={bodyFont.className}>
+        <body className="brand-gradient">
+          <div className="pt-28 text-center">Caricamento...</div>
+        </body>
+      </html>
+    );
+  }
 
   return (
     <html lang="it" className={bodyFont.className}>
       <body className="brand-gradient">
         <InviteRedirect />
         <ThemeClient />
+        <PublicHeader />
 
-        {!hideHeader && <PublicHeader />}
+        {/* PAGINE AUTH → layout pulito */}
+        {isAuthPage ? (
+          <main>{children}</main>
+        ) : (
+          <PageBg image="/assets/auth-bg.jpg">
+            <div className="page-bg__content min-h-screen pt-21">
+              <div className="mx-auto w-full max-w-7xl px-6 pt-1 md:pt-0 grid gap-6 md:grid-cols-[210px_1fr]">
+                
+                {/* SIDEBAR */}
+                <aside className="hidden md:block card p-3 md:p-4">
+                  <nav className="flex gap-2 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
+                    {NAV.map((item) => {
+                      const active =
+                        pathname === item.href ||
+                        (item.href !== "/" && pathname.startsWith(item.href));
 
-        <main
-          className={
-            isApp ? "" : hideHeader ? "" : "mx-auto max-w-6xl px-4 py-10 pt-24"
-          }
-        >
-          {children}
-        </main>
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={[
+                            "shrink-0 rounded-lg px-3 py-2 text-sm transition",
+                            "md:block md:w-full",
+                            active
+                              ? "bg-panel-theme border border-theme"
+                              : "hover:bg-panel-theme",
+                          ].join(" ")}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </aside>
+
+                {/* CONTENUTO */}
+                <main className="min-w-0">{children}</main>
+              </div>
+            </div>
+          </PageBg>
+        )}
       </body>
     </html>
   );

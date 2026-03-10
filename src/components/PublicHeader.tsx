@@ -17,11 +17,11 @@ const NAV = [
 ];
 
 const APP_NAV = [
-  { href: "/app", label: "Dashboard" },
-  { href: "/app/giocatori", label: "Giocatori" },
-  { href: "/app/eventi", label: "Calendario Eventi" },
-  { href: "/app/convocazioni", label: "Convocazioni" },
-  { href: "/app/impostazioni", label: "Impostazioni" },
+  { href: "/", label: "Dashboard" },
+  { href: "/giocatori", label: "Giocatori" },
+  { href: "/eventi", label: "Calendario Eventi" },
+  { href: "/convocazioni", label: "Convocazioni" },
+  { href: "/impostazioni", label: "Impostazioni" },
 ];
 
 export default function PublicHeader() {
@@ -33,7 +33,10 @@ export default function PublicHeader() {
     pathname === "/imposta-password" ||
     pathname?.startsWith("/auth/callback");
 
-  const isAppSide = pathname?.startsWith("/app");
+  const isAppSide =
+  pathname !== "/login" &&
+  pathname !== "/imposta-password" &&
+  !pathname?.startsWith("/auth");
 
   const [isAuthed, setIsAuthed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -115,7 +118,10 @@ export default function PublicHeader() {
     <header className="fixed top-0 z-50 w-full">
       <div className="bg-black/25 backdrop-blur-md border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <Link href="/" className="flex items-center gap-2 text-white">
+          <Link
+            href={isAppSide ? "/" : "https://www.littleclub.it"}
+            className="flex items-center gap-2 text-white"
+          >
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15 overflow-hidden">
               <Image
                 src="/assets/logo.png"
@@ -148,7 +154,12 @@ export default function PublicHeader() {
             {/* DESKTOP: invariato */}
             <div className="hidden md:block text-sm text-white/80 mr-2">
               {isAuthed ? (
-                <span>{userName ? `${userName}` : ""}</span>
+                <button
+                  onClick={() => router.push("/profilo")}
+                  className="hover:underline"
+                >
+                  {userName}
+                </button>
               ) : (
                 <span>Area riservata</span>
               )}
@@ -167,7 +178,7 @@ export default function PublicHeader() {
               </button>
 
               {open && (
-                <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/15 bg-black/60 backdrop-blur-md">
+                <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-white/15 bg-black/85 backdrop-blur-md">
                   {/* header (se loggato mostra nome) */}
                   <div className="px-4 py-3 border-b border-white/10">
                     <div className="text-xs text-white/60">
@@ -175,7 +186,9 @@ export default function PublicHeader() {
                     </div>
                     {isAuthed ? (
                       <div className="text-sm font-medium text-white/90">
-                        {userName ? userName : "Utente"}
+                        <Link href="/profilo" className="hover:underline">
+                          {userName ? userName : "Utente"}
+                        </Link>
                       </div>
                     ) : (
                       <div className="text-sm text-white/80">Menu</div>
@@ -216,11 +229,11 @@ export default function PublicHeader() {
                           className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
                           onClick={() => setOpen(false)}
                         >
-                          Torna alla Home
+                          Torna al sito Web
                         </Link>
                       ) : (
                         <Link
-                          href="/app"
+                          href="/"
                           className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
                           onClick={() => setOpen(false)}
                         >
@@ -273,14 +286,6 @@ export default function PublicHeader() {
                           {userName ? userName : "Utente"}
                         </div>
                       </div>
-
-                      <Link
-                        href="/app"
-                        className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
-                        onClick={() => setOpen(false)}
-                      >
-                        Dashboard
-                      </Link>
 
                       <button
                         className="block w-full px-4 py-3 text-left text-sm text-white/90 hover:bg-white/10"

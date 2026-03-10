@@ -589,7 +589,7 @@ export default function Page() {
             <button
               type="button"
               className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
-              onClick={() => router.push("/app/staff")}
+              onClick={() => router.push("/staff")}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">

@@ -34,17 +34,22 @@ export default function LoginPage() {
     }
 
     setLoading(false);
-    router.push("/app");
+    router.push("/");
   }
 
   async function magicLink() {
     setError(null);
     setLoading(true);
 
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_SITE_URL;
+
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/app`,
+        emailRedirectTo: `${origin}/auth/callback?next=/app`,
       },
     });
 
@@ -73,7 +78,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,.14),transparent_55%)]" />
       </div>
 
-      <div className="relative mx-auto flex max-w-6xl items-center justify-center px-4 py-14">
+      <div className="relative mx-auto flex max-w-6xl items-center justify-center px-4 py-54">
         <div className="w-full max-w-md">
           <div className="rounded-2xl border border-white/15 bg-black/35 p-8 shadow-[0_20px_60px_rgba(0,0,0,.35)] backdrop-blur">
             <div className="flex items-center gap-3">

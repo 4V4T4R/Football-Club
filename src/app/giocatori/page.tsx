@@ -4,6 +4,7 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
+import Link from "next/link";
 
 function formatDateIT(date: string) {
   if (!date) return "—";
@@ -22,10 +23,30 @@ type Player = {
   last_name: string;
   birth_date: string;
   shirt_number: number | null;
+  role: string | null;
+  phone: string | null;
+  matricola: string | null;
   active: boolean;
 };
 
 type MenuPos = { top: number; left: number };
+
+function roleBadge(role: string | null) {
+  if (!role) return "bg-gray-500/20 text-gray-400";
+
+  switch (role) {
+    case "POR":
+      return "bg-yellow-500/20 text-yellow-400";
+    case "DEF":
+      return "bg-green-500/20 text-green-400";
+    case "CC":
+      return "bg-blue-500/20 text-blue-400";
+    case "ATT":
+      return "bg-red-500/20 text-red-400";
+    default:
+      return "bg-gray-500/20 text-gray-400";
+  }
+}
 
 export default function PlayersPage() {
   const [role, setRole] = useState<string | null>(null);
@@ -41,6 +62,9 @@ export default function PlayersPage() {
   const [email, setEmail] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [shirtNumber, setShirtNumber] = useState<string>("");
+  const [rolePlayer, setRolePlayer] = useState("");
+  const [phone, setPhone] = useState("");
+  const [matricola, setMatricola] = useState("");
 
   // edit
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -48,6 +72,9 @@ export default function PlayersPage() {
   const [editLastName, setEditLastName] = useState("");
   const [editBirthDate, setEditBirthDate] = useState("");
   const [editShirtNumber, setEditShirtNumber] = useState<string>("");
+  const [editRole, setEditRole] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editMatricola, setEditMatricola] = useState("");
 
   // actions dropdown (desktop) + actions sheet (mobile)
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
@@ -62,8 +89,8 @@ export default function PlayersPage() {
   const isStaff = useMemo(() => role === "admin" || role === "staff", [role]);
 
   const canSubmit = useMemo(() => {
-    return firstName.trim() && lastName.trim() && birthDate && email.trim();
-  }, [firstName, lastName, birthDate, email]);
+    return firstName.trim() && lastName.trim() && birthDate;
+  }, [firstName, lastName, birthDate]);
 
   const inputClass =
     "w-full h-11 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm";
@@ -190,7 +217,7 @@ export default function PlayersPage() {
 
     let q = supabase
     .from("players")
-    .select("id, first_name, last_name, birth_date, shirt_number, active")
+    .select("id, first_name, last_name, birth_date, shirt_number, role, phone, matricola, active")
     .eq("club_id", clubId);
 
   if (!isStaffLocal) {
@@ -291,12 +318,15 @@ export default function PlayersPage() {
   }, [actionsOpenId]);
 
   function startEdit(p: Player) {
-    setEditingId(p.id);
-    setEditFirstName(p.first_name);
-    setEditLastName(p.last_name);
-    setEditBirthDate(p.birth_date);
-    setEditShirtNumber(p.shirt_number?.toString() ?? "");
-  }
+  setEditingId(p.id);
+  setEditFirstName(p.first_name);
+  setEditLastName(p.last_name);
+  setEditBirthDate(p.birth_date);
+  setEditShirtNumber(p.shirt_number?.toString() ?? "");
+  setEditRole(p.role ?? "");
+  setEditPhone(p.phone ?? "");
+  setEditMatricola(p.matricola ?? "");
+}
 
   function cancelEdit() {
     setEditingId(null);
@@ -304,6 +334,9 @@ export default function PlayersPage() {
     setEditLastName("");
     setEditBirthDate("");
     setEditShirtNumber("");
+    setEditRole("");
+    setEditPhone("");
+    setEditMatricola("");
   }
 
   async function saveEdit(playerId: string) {
@@ -322,6 +355,9 @@ export default function PlayersPage() {
         last_name: editLastName.trim(),
         birth_date: editBirthDate,
         shirt_number: shirt,
+        role: editRole || null,
+        phone: editPhone || null,
+        matricola: editMatricola || null,
       })
       .eq("id", playerId);
 
@@ -420,9 +456,12 @@ export default function PlayersPage() {
         club_id: club.id,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
-        email: email.trim(),
+        email: email.trim() || null,
         birth_date: birthDate || null,
         shirt_number: shirt ? shirt : null,
+        role: rolePlayer || null,
+        phone: phone || null,
+        matricola: matricola || null,
       }),
     });
 
@@ -438,7 +477,9 @@ export default function PlayersPage() {
     setBirthDate("");
     setShirtNumber("");
     setEmail("");
-    setAddOpen(false);
+    setRolePlayer("");
+    setPhone("");
+    setMatricola("");
 
     await loadClubAndPlayers();
   }
@@ -511,12 +552,27 @@ export default function PlayersPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="font-medium text-base-theme truncate">
-                            {p.last_name} {p.first_name}
+                            {isStaff ? (
+                              <Link href={`/giocatori/${p.id}`} className="hover:underline">
+                                {p.last_name} {p.first_name}
+                              </Link>
+                            ) : (
+                              <span>
+                                {p.last_name} {p.first_name}
+                              </span>
+                            )}
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-theme">
+                            <span
+                              className={`px-2 py-[2px] rounded-md text-[11px] font-semibold ${roleBadge(
+                                p.role
+                              )}`}
+                            >
+                              {p.role ?? "—"}
+                            </span>
+
                             <span className="inline-flex items-center gap-1">
-                              👕{" "}
-                              <b className="font-medium text-base-theme">
+                              👕 <b className="font-medium text-base-theme">
                                 {p.shirt_number ?? "—"}
                               </b>
                             </span>
@@ -614,10 +670,11 @@ export default function PlayersPage() {
                     <thead>
                       <tr className="bg-panel-theme">
                         <th className="px-3 py-2 text-left w-[280px]">Nome</th>
+                        <th className="px-3 py-2 text-center w-[90px]">Ruolo</th>
+                        <th className="px-3 py-2 text-center w-[90px]">Maglia</th>
                         <th className="px-3 py-2 text-left whitespace-nowrap w-[130px]">
                           Nascita
                         </th>
-                        <th className="px-3 py-2 text-center w-[90px]">Maglia</th>
 
                         {isStaff && (
                           <>
@@ -636,15 +693,37 @@ export default function PlayersPage() {
                           <Fragment key={p.id}>
                             <tr className="border-t border-theme align-middle">
                               <td className="px-3 py-2 align-middle whitespace-nowrap">
-                                {p.last_name} {p.first_name}
+                                {isStaff ? (
+                                  <Link href={`/giocatori/${p.id}`} className="hover:underline">
+                                    {p.last_name} {p.first_name}
+                                  </Link>
+                                ) : (
+                                  <span>
+                                    {p.last_name} {p.first_name}
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="px-3 py-2 align-middle">
+                                <div className="flex justify-center">
+                                  <span
+                                    className={`px-2 py-[2px] rounded-md text-[11px] font-semibold ${roleBadge(
+                                      p.role
+                                    )}`}
+                                  >
+                                    {p.role ?? "—"}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="px-3 py-2 align-middle">
+                                <div className="flex justify-center">
+                                  {p.shirt_number ?? "—"}
+                                </div>
                               </td>
 
                               <td className="px-3 py-2 align-middle whitespace-nowrap">
                                 {formatDateIT(p.birth_date)}
-                              </td>
-
-                              <td className="px-3 py-2 align-middle">
-                                <div className="flex justify-center">{p.shirt_number ?? "—"}</div>
                               </td>
 
                               {isStaff && (
@@ -679,7 +758,7 @@ export default function PlayersPage() {
 
                             {isStaff && editing && (
                               <tr className="border-t border-theme">
-                                <td colSpan={5} className="px-3 py-3">
+                                <td colSpan={6} className="px-3 py-3">
                                   <div className="rounded-xl border border-theme bg-panel-theme p-4 space-y-3">
                                     <div className="grid gap-3 sm:grid-cols-2">
                                       <div>
@@ -729,6 +808,32 @@ export default function PlayersPage() {
                                           placeholder="(opzionale)"
                                         />
                                       </div>
+
+                                      <select
+                                        className={inputClass}
+                                        value={editRole}
+                                        onChange={(e) => setEditRole(e.target.value)}
+                                      >
+                                        <option value="">Ruolo</option>
+                                        <option value="POR">Portiere</option>
+                                        <option value="DEF">Difensore</option>
+                                        <option value="CC">Centrocampista</option>
+                                        <option value="ATT">Attaccante</option>
+                                      </select>
+
+                                      <input
+                                        className={inputClass}
+                                        placeholder="Telefono"
+                                        value={editPhone}
+                                        onChange={(e) => setEditPhone(e.target.value)}
+                                      />
+
+                                      <input
+                                        className={inputClass}
+                                        placeholder="Matricola"
+                                        value={editMatricola}
+                                        onChange={(e) => setEditMatricola(e.target.value)}
+                                      />
                                     </div>
 
                                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
@@ -927,7 +1032,7 @@ export default function PlayersPage() {
             aria-label="Chiudi"
             onClick={() => setAddOpen(false)}
           />
-          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-4/9">
             <div className="card p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -960,7 +1065,7 @@ export default function PlayersPage() {
                 />
                 <input
                   className={inputClass}
-                  placeholder="Email giocatore"
+                  placeholder="Email (opzionale)"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -978,6 +1083,31 @@ export default function PlayersPage() {
                   placeholder="Numero maglia (opzionale)"
                   value={shirtNumber}
                   onChange={(e) => setShirtNumber(e.target.value)}
+                />
+                <select
+                  className={inputClass}
+                  value={rolePlayer}
+                  onChange={(e) => setRolePlayer(e.target.value)}
+                >
+                  <option value="">Ruolo</option>
+                  <option value="POR">Portiere</option>
+                  <option value="DEF">Difensore</option>
+                  <option value="CC">Centrocampista</option>
+                  <option value="ATT">Attaccante</option>
+                </select>
+
+                <input
+                  className={inputClass}
+                  placeholder="Telefono"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+
+                <input
+                  className={inputClass}
+                  placeholder="Matricola"
+                  value={matricola}
+                  onChange={(e) => setMatricola(e.target.value)}
                 />
 
                 <button

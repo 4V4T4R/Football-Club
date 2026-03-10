@@ -3,6 +3,7 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
+import Link from "next/link";
 
 type Club = { id: string; name: string; slug: string };
 
@@ -450,7 +451,11 @@ export default function StaffPage() {
                     <div key={s.id} className="rounded-xl border border-theme bg-panel-theme p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="font-medium text-base-theme truncate">{fullName || "—"}</div>
+                          <div className="font-medium text-base-theme truncate">
+                            <Link href={`/staff/${s.id}`} className="hover:underline">
+                              {fullName || "—"}
+                            </Link>
+                          </div>
                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-theme">
                             <span className="inline-flex items-center gap-1">🎂 {formatDateIT(s.birth_date)}</span>
                             <span className="inline-flex items-center gap-1">🏷️ {qualifica}</span>
@@ -544,7 +549,11 @@ export default function StaffPage() {
                         return (
                           <Fragment key={s.id}>
                             <tr className="border-t border-theme align-middle">
-                              <td className="px-3 py-2 whitespace-nowrap">{fullName || "—"}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <Link href={`/staff/${s.id}`} className="hover:underline">
+                                  {fullName || "—"}
+                                </Link>
+                              </td>
                               <td className="px-3 py-2 whitespace-nowrap">{formatDateIT(s.birth_date)}</td>
                               <td className="px-3 py-2 whitespace-nowrap">{qualifica}</td>
 
