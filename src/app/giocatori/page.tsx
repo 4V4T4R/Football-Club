@@ -19,13 +19,14 @@ type Club = { id: string; name: string; slug: string };
 
 type Player = {
   id: string;
+  user_id: string | null;
   first_name: string;
   last_name: string;
   birth_date: string;
   shirt_number: number | null;
   role: string | null;
-  phone: string | null;
   matricola: string | null;
+  phone: string | null;
   active: boolean;
 };
 
@@ -75,11 +76,13 @@ export default function PlayersPage() {
   const [editRole, setEditRole] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editMatricola, setEditMatricola] = useState("");
+  const [editEmail, setEditEmail] = useState("");
 
   // actions dropdown (desktop) + actions sheet (mobile)
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
   const [sheetOpenId, setSheetOpenId] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState<string>("");
 
@@ -217,7 +220,7 @@ export default function PlayersPage() {
 
     let q = supabase
     .from("players")
-    .select("id, first_name, last_name, birth_date, shirt_number, role, phone, matricola, active")
+    .select("id, user_id, first_name, last_name, birth_date, shirt_number, role, matricola, phone, active")
     .eq("club_id", clubId);
 
   if (!isStaffLocal) {
@@ -326,6 +329,7 @@ export default function PlayersPage() {
   setEditRole(p.role ?? "");
   setEditPhone(p.phone ?? "");
   setEditMatricola(p.matricola ?? "");
+  setEditEmail("");
 }
 
   function cancelEdit() {
@@ -343,27 +347,57 @@ export default function PlayersPage() {
     setError(null);
 
     const shirt = editShirtNumber.trim() ? Number(editShirtNumber) : null;
+
     if (editShirtNumber.trim() && Number.isNaN(shirt)) {
       setError("Numero maglia non valido.");
       return;
     }
 
-    const { error: updErr } = await supabase
-      .from("players")
-      .update({
+    // 1️⃣ aggiorna dati giocatore
+    const res = await fetch("/api/players/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        player_id: playerId,
         first_name: editFirstName.trim(),
         last_name: editLastName.trim(),
-        birth_date: editBirthDate,
+        birth_date: editBirthDate || null,
         shirt_number: shirt,
         role: editRole || null,
         phone: editPhone || null,
         matricola: editMatricola || null,
-      })
-      .eq("id", playerId);
+      }),
+    });
 
-    if (updErr) {
-      setError(updErr.message);
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(json?.error ?? "Errore aggiornamento giocatore");
       return;
+    }
+
+    // 2️⃣ se è stata inserita una email → crea account giocatore
+    if (editEmail && editEmail.trim()) {
+
+      const res = await fetch("/api/players/attach-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          player_id: playerId,
+          email: editEmail.trim(),
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(json?.error ?? "Errore invito giocatore");
+        return;
+      }
     }
 
     cancelEdit();
@@ -401,10 +435,16 @@ export default function PlayersPage() {
     );
     if (!ok) return;
 
-    const { error: delErr } = await supabase.from("players").delete().eq("id", p.id);
+    const res = await fetch("/api/players/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ player_id: p.id }),
+    });
 
-    if (delErr) {
-      setError(delErr.message);
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(json?.error ?? "Errore eliminazione giocatore");
       return;
     }
 
@@ -481,6 +521,16 @@ export default function PlayersPage() {
     setPhone("");
     setMatricola("");
 
+    // chiudi popup
+    setAddOpen(false);
+
+    // messaggio conferma
+    setSuccess("Giocatore aggiunto correttamente ✅");
+
+    setTimeout(() => {
+      setSuccess(null);
+    }, 3000);
+
     await loadClubAndPlayers();
   }
 
@@ -512,6 +562,7 @@ export default function PlayersPage() {
           )}
         </p>
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        {success && <p className="mt-4 text-sm text-green-600">{success}</p>}
       </div>
 
       <div className="grid gap-6 md:grid-cols-1">
@@ -602,7 +653,7 @@ export default function PlayersPage() {
                         <div className="mt-3 rounded-xl border border-theme bg-panel-theme p-3 space-y-3">
                           <div className="grid gap-3">
                             <div>
-                              <label className="mb-1 block text-xs text-muted-theme">Cognome</label>
+                              <label className="mb-1 px-1 block text-xs text-muted-theme">Cognome</label>
                               <input
                                 className={inputClass}
                                 value={editLastName}
@@ -610,7 +661,7 @@ export default function PlayersPage() {
                               />
                             </div>
                             <div>
-                              <label className="mb-1 block text-xs text-muted-theme">Nome</label>
+                              <label className="mb-1 px-1 block text-xs text-muted-theme">Nome</label>
                               <input
                                 className={inputClass}
                                 value={editFirstName}
@@ -618,7 +669,7 @@ export default function PlayersPage() {
                               />
                             </div>
                             <div>
-                              <label className="mb-1 block text-xs text-muted-theme">
+                              <label className="mb-1 px-1 block text-xs text-muted-theme">
                                 Data di nascita
                               </label>
                               <input
@@ -629,7 +680,7 @@ export default function PlayersPage() {
                               />
                             </div>
                             <div>
-                              <label className="mb-1 block text-xs text-muted-theme">
+                              <label className="mb-1 px-1 block text-xs text-muted-theme">
                                 Numero maglia
                               </label>
                               <input
@@ -638,6 +689,51 @@ export default function PlayersPage() {
                                 onChange={(e) => setEditShirtNumber(e.target.value)}
                               />
                             </div>
+
+                            <select
+                              className={inputClass}
+                              value={editRole}
+                              onChange={(e) => setEditRole(e.target.value)}
+                            >
+                              <option value="">Ruolo</option>
+                              <option value="POR">Portiere</option>
+                              <option value="DEF">Difensore</option>
+                              <option value="CC">Centrocampista</option>
+                              <option value="ATT">Attaccante</option>
+                            </select>
+
+                            <input
+                              className={inputClass}
+                              placeholder="Telefono"
+                              value={editPhone}
+                              onChange={(e) => setEditPhone(e.target.value)}
+                            />
+
+                            <div>
+                                <label className="mb-1 px-1 block text-xs text-muted-theme">
+                                  Matricola
+                                </label>
+                                <input
+                                  className={inputClass}
+                                  placeholder="Matricola"
+                                  value={editMatricola}
+                                  onChange={(e) => setEditMatricola(e.target.value)}
+                                />
+                            </div>
+
+                            {!p.user_id && (
+                              <div>
+                                <label className="mb-1 px-1 block text-xs text-muted-theme">
+                                  Email (crea accesso giocatore)
+                                </label>
+                                <input
+                                  className={inputClass}
+                                  placeholder="email giocatore"
+                                  value={editEmail}
+                                  onChange={(e) => setEditEmail(e.target.value)}
+                                />
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex gap-2 justify-end">
@@ -762,7 +858,7 @@ export default function PlayersPage() {
                                   <div className="rounded-xl border border-theme bg-panel-theme p-4 space-y-3">
                                     <div className="grid gap-3 sm:grid-cols-2">
                                       <div>
-                                        <label className="mb-1 block text-xs text-muted-theme">
+                                        <label className="mb-1 px-1 block text-xs text-muted-theme">
                                           Cognome
                                         </label>
                                         <input
@@ -774,7 +870,7 @@ export default function PlayersPage() {
                                       </div>
 
                                       <div>
-                                        <label className="mb-1 block text-xs text-muted-theme">
+                                        <label className="mb-1 px-1 block text-xs text-muted-theme">
                                           Nome
                                         </label>
                                         <input
@@ -786,7 +882,7 @@ export default function PlayersPage() {
                                       </div>
 
                                       <div>
-                                        <label className="mb-1 block text-xs text-muted-theme">
+                                        <label className="mb-1 px-1 block text-xs text-muted-theme">
                                           Data di nascita
                                         </label>
                                         <input
@@ -798,7 +894,7 @@ export default function PlayersPage() {
                                       </div>
 
                                       <div>
-                                        <label className="mb-1 block text-xs text-muted-theme">
+                                        <label className="mb-1 px-1 block text-xs text-muted-theme">
                                           Numero maglia
                                         </label>
                                         <input
@@ -828,12 +924,31 @@ export default function PlayersPage() {
                                         onChange={(e) => setEditPhone(e.target.value)}
                                       />
 
-                                      <input
-                                        className={inputClass}
-                                        placeholder="Matricola"
-                                        value={editMatricola}
-                                        onChange={(e) => setEditMatricola(e.target.value)}
-                                      />
+                                      <div>
+                                          <label className="mb-1 px-1 block text-xs text-muted-theme">
+                                            Matricola
+                                          </label>
+                                          <input
+                                            className={inputClass}
+                                            placeholder="Matricola"
+                                            value={editMatricola}
+                                            onChange={(e) => setEditMatricola(e.target.value)}
+                                          />
+                                      </div>
+
+                                      {!p.user_id && (
+                                        <div>
+                                          <label className="mb-1 px-1 block text-xs text-muted-theme">
+                                            Email (crea accesso giocatore)
+                                          </label>
+                                          <input
+                                            className={inputClass}
+                                            placeholder="email giocatore"
+                                            value={editEmail}
+                                            onChange={(e) => setEditEmail(e.target.value)}
+                                          />
+                                        </div>
+                                      )}
                                     </div>
 
                                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

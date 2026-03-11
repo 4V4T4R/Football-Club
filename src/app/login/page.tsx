@@ -113,6 +113,11 @@ export default function LoginPage() {
                     placeholder="La tua password"
                     value={pw}
                     onChange={(e) => setPw(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canSubmit) {
+                        login();
+                      }
+                    }}
                   />
                   <button
                     type="button"

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRef } from "react";
 
 function roleBadge(role: string | null) {
   if (!role) return "bg-gray-500/20 text-gray-400";
@@ -57,16 +58,21 @@ type Player = {
   birth_date: string | null;
   shirt_number: number | null;
   role: string | null;
-  email: string | null;
   phone: string | null;
   matricola: string | null;
+  avatar_url: string | null;
+  users: {
+    email: string | null;
+  } | null;
 };
 
 export default function PlayerProfile() {
   const params = useParams();
   const playerId = params.id as string;
 
+  const [isStaff, setIsStaff] = useState(false);
   const [player, setPlayer] = useState<Player | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -84,19 +90,26 @@ export default function PlayerProfile() {
         .maybeSingle();
 
       const role = member?.role ?? null;
-      const isStaff = role === "admin" || role === "staff";
+      const staff = role === "admin" || role === "staff";
+
+      setIsStaff(staff);
 
       // dati giocatore
       const { data } = await supabase
         .from("players")
-        .select("*")
+        .select(`
+          *,
+          users (
+            email
+          )
+        `)
         .eq("id", playerId)
-        .single();
+        .single()
 
       if (!data) return;
 
       // se è player controlliamo che sia il suo
-      if (!isStaff) {
+      if (!staff) {
         const { data: me } = await supabase
           .from("players")
           .select("id")
@@ -115,6 +128,80 @@ export default function PlayerProfile() {
     load();
   }, [playerId]);
 
+  async function uploadAvatar(e: any) {
+    const file = e.target.files?.[0];
+    if (!file || !player) return;
+
+    // comprime immagine
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      img.src = reader.result as string;
+    };
+
+    reader.readAsDataURL(file);
+
+    img.onload = async () => {
+      const canvas = document.createElement("canvas");
+
+      const MAX = 512;
+
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX) {
+          height *= MAX / width;
+          width = MAX;
+        }
+      } else {
+        if (height > MAX) {
+          width *= MAX / height;
+          height = MAX;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+
+        const fileName = `${player.id}-${Date.now()}.jpg`;
+
+        const { error } = await supabase.storage
+          .from("avatars")
+          .upload(fileName, blob, {
+            contentType: "image/jpeg",
+          });
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        const { data } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(fileName);
+
+        const url = data.publicUrl;
+
+        await supabase
+          .from("players")
+          .update({ avatar_url: url })
+          .eq("id", player.id);
+
+        setPlayer({ ...player, avatar_url: url });
+      }, "image/jpeg", 0.8);
+    };
+  }
+
   if (!player) {
     return <div className="card p-8">Caricamento...</div>;
   }
@@ -125,9 +212,29 @@ export default function PlayerProfile() {
       <div className="card p-8">
         <div className="flex items-center gap-6">
 
-          <div className="h-24 w-24 rounded-xl bg-panel-theme flex items-center justify-center text-3xl">
-            👤
+          <div
+            className="h-44 w-44 rounded-xl bg-panel-theme flex items-center justify-center text-3xl overflow-hidden cursor-pointer"
+            onClick={() => {
+              if (isStaff) fileInputRef.current?.click();
+            }}
+          >
+            {player.avatar_url ? (
+              <img
+                src={player.avatar_url}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              "👤"
+            )}
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={uploadAvatar}
+          />
 
           <div>
             <h1 className="text-2xl font-semibold text-base-theme">
@@ -164,7 +271,7 @@ export default function PlayerProfile() {
 
           <div className="space-y-2 text-sm">
             <div>Nascita: {formatDateIT(player.birth_date)} ({calculateAge(player.birth_date)} anni)</div>
-            <div>Email: {player.email ?? "—"}</div>
+            <div>Email: {player.users?.email ?? "—"}</div>
             <div>Telefono: {player.phone ?? "—"}</div>
           </div>
         </div>

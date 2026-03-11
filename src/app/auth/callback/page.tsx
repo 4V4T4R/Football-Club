@@ -12,7 +12,7 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     async function handleAuth() {
       const code = searchParams.get("code");
-      const next = searchParams.get("next") || "/app";
+      const next = searchParams.get("next") || "/";
 
       if (!code) {
         setMessage("Link non valido: manca il codice.");

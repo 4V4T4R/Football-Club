@@ -120,7 +120,7 @@ export default function ImpostaPasswordPage() {
   }
 
   return (
-    <div className="relative left-1/2 right-1/2 -mx-[50vw] -mt-25 w-screen min-h-[101svh] overflow-hidden">
+    <div className="relative left-1/2 right-1/2 -mx-[50vw] -mt-25 w-screen min-h-[117.6svh] overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0">
         <img
@@ -136,7 +136,7 @@ export default function ImpostaPasswordPage() {
       </div>
 
       {/* Content */}
-      <div className="relative mx-auto flex max-w-6xl items-center justify-center px-4 py-35">
+      <div className="relative mx-auto flex max-w-6xl items-center justify-center px-4 py-54">
         <div className="w-full max-w-md">
           <div className="rounded-2xl border border-white/15 bg-black/35 p-8 shadow-[0_20px_60px_rgba(0,0,0,.35)] backdrop-blur">
             <div className="flex items-center gap-3">
