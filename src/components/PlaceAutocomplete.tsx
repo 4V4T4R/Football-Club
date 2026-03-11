@@ -193,7 +193,7 @@ export default function PlaceAutocomplete({
 
       {hasDropdown && (
         <div
-          className="absolute left-0 right-0 mt-2 overflow-hidden rounded-xl border border-theme bg-panel-theme shadow-lg z-[80]"
+          className="absolute left-0 right-0 mt-2 overflow-hidden rounded-xl border border-theme bg-black shadow-xl z-[80]"
           onPointerDown={(e) => e.preventDefault()}
         >
           {loading && (
