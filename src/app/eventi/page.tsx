@@ -369,14 +369,14 @@ export default function EventsPage() {
                     <div className="shrink-0 flex flex-col gap-2">
                       <Link
                         className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                        href={"/app/eventi/" + ev.id}
+                        href={"/eventi/" + ev.id}
                       >
                         Convoca →
                       </Link>
 
                       <Link
                         className="rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm"
-                        href={"/app/eventi/" + ev.id + "/risposte"}
+                        href={"/eventi/" + ev.id + "/risposte"}
                       >
                         Risposte →
                       </Link>
