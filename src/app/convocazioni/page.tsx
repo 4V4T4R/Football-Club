@@ -384,13 +384,13 @@ export default function ConvocazioniPage() {
                         <div className="shrink-0 flex flex-col gap-2">
                           <Link
                             className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-sm text-center"
-                            href={"/app/eventi/" + ev.id}
+                            href={"/eventi/" + ev.id}
                           >
                             Convoca →
                           </Link>
                           <Link
                             className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-sm text-center"
-                            href={"/app/eventi/" + ev.id + "/risposte"}
+                            href={"/eventi/" + ev.id + "/risposte"}
                           >
                             Risposte →
                           </Link>
@@ -464,13 +464,13 @@ export default function ConvocazioniPage() {
                             <div className="flex flex-col items-end gap-2">
                               <Link
                                 className="rounded-md border border-theme bg-panel-theme px-3 py-1"
-                                href={"/app/eventi/" + ev.id}
+                                href={"/eventi/" + ev.id}
                               >
                                 Convoca →
                               </Link>
                               <Link
                                 className="rounded-md border border-theme bg-panel-theme px-3 py-1"
-                                href={"/app/eventi/" + ev.id + "/risposte"}
+                                href={"/eventi/" + ev.id + "/risposte"}
                               >
                                 Risposte →
                               </Link>
@@ -505,7 +505,7 @@ export default function ConvocazioniPage() {
 
                   return (
                     <div key={ev.id} className="rounded-xl border border-theme bg-panel-theme p-3">
-                      <Link href={"/app/convocazioni/" + ev.id} className="block">
+                      <Link href={"/convocazioni/" + ev.id} className="block">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="font-medium text-base-theme truncate">{ev.title}</div>
@@ -612,7 +612,7 @@ export default function ConvocazioniPage() {
                           <td className="px-3 py-3 text-right">
                             <Link
                               className="rounded-md border border-theme bg-panel-theme px-3 py-2"
-                              href={"/app/convocazioni/" + ev.id}
+                              href={"/convocazioni/" + ev.id}
                             >
                               Apri →
                             </Link>
