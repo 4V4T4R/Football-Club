@@ -159,7 +159,7 @@ export default function PlaceAutocomplete({
       });
 
       setQuery(d.address);
-      onInputChange?.(d.address);
+      //onInputChange?.(d.address);
 
       setItems([]);
       setOpen(false);
@@ -195,11 +195,7 @@ export default function PlaceAutocomplete({
         <div
           className="absolute left-0 right-0 mt-2 overflow-hidden rounded-xl border border-theme shadow-xl z-[80] text-base-theme"
           style={{
-            backgroundColor:
-              typeof document !== "undefined" &&
-              document.documentElement.dataset.theme === "dark"
-                ? "rgba(10,10,10,0.95)"
-                : "rgba(255,255,255,0.96)",
+            background: "rgba(var(--panel-bg-r), var(--panel-bg-g), var(--panel-bg-b), 0.96)"
           }}
           onPointerDown={(e) => e.preventDefault()}
         >

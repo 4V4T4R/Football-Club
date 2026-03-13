@@ -213,7 +213,7 @@ export default function PlayerProfile() {
         <div className="flex items-center gap-6">
 
           <div
-            className="h-44 w-44 rounded-xl bg-panel-theme flex items-center justify-center text-3xl overflow-hidden cursor-pointer"
+            className="h-54 w-44 rounded-xl bg-panel-theme flex items-center justify-center text-3xl overflow-hidden cursor-pointer"
             onClick={() => {
               if (isStaff) fileInputRef.current?.click();
             }}
