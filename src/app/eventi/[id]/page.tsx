@@ -182,7 +182,7 @@ export default function EventDetailPage() {
     }
 
     setSaving(false);
-    router.push("/app/eventi");
+    router.push("/eventi");
   }
 
   const selectAllRef = useRef<HTMLInputElement | null>(null);
