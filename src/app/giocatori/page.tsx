@@ -38,7 +38,7 @@ function roleBadge(role: string | null) {
   switch (role) {
     case "POR":
       return "bg-yellow-500/20 text-yellow-400";
-    case "DEF":
+    case "DC":
       return "bg-green-500/20 text-green-400";
     case "CC":
       return "bg-blue-500/20 text-blue-400";
@@ -697,7 +697,7 @@ export default function PlayersPage() {
                             >
                               <option value="">Ruolo</option>
                               <option value="POR">Portiere</option>
-                              <option value="DEF">Difensore</option>
+                              <option value="DC">Difensore</option>
                               <option value="CC">Centrocampista</option>
                               <option value="ATT">Attaccante</option>
                             </select>
@@ -912,7 +912,7 @@ export default function PlayersPage() {
                                       >
                                         <option value="">Ruolo</option>
                                         <option value="POR">Portiere</option>
-                                        <option value="DEF">Difensore</option>
+                                        <option value="DC">Difensore</option>
                                         <option value="CC">Centrocampista</option>
                                         <option value="ATT">Attaccante</option>
                                       </select>
@@ -1206,7 +1206,7 @@ export default function PlayersPage() {
                 >
                   <option value="">Ruolo</option>
                   <option value="POR">Portiere</option>
-                  <option value="DEF">Difensore</option>
+                  <option value="DC">Difensore</option>
                   <option value="CC">Centrocampista</option>
                   <option value="ATT">Attaccante</option>
                 </select>
