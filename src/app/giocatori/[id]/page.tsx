@@ -11,7 +11,7 @@ function roleBadge(role: string | null) {
   switch (role) {
     case "POR":
       return "bg-yellow-500/20 text-yellow-400";
-    case "DEF":
+    case "DC":
       return "bg-green-500/20 text-green-400";
     case "CC":
       return "bg-blue-500/20 text-blue-400";
