@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { setThemePref } from "@/components/ThemeClient";
 import { resolveActiveClub } from "@/lib/activeClub";
+import { getClubBackgroundUrl, getClubDisplayName, getClubLogoUrl } from "@/lib/clubBranding";
 
-type Club = { id: string; name: string; slug: string };
+type Club = {
+  id: string;
+  name: string;
+  slug: string;
+  display_name: string | null;
+  logo_url: string | null;
+  background_url: string | null;
+  website_url: string | null;
+};
 
 type UserRow = {
   id: string;
@@ -24,6 +33,11 @@ type PlayerRow = {
   birth_date: string;
   shirt_number: number | null;
   user_id: string | null;
+  phone: string | null;
+  document_type: string | null;
+  document_number: string | null;
+  document_expiry: string | null;
+  avatar_url: string | null;
   active: boolean;
   created_at: string;
 };
@@ -33,6 +47,7 @@ type MemberRow = {
   role: string;
   created_at: string;
   birth_date: string | null;
+  avatar_url: string | null;
 };
 
 type ThemePref = "system" | "light" | "dark";
@@ -65,6 +80,24 @@ function roleLabel(memberRole: string | null, isPlayer: boolean) {
   if (memberRole === "staff") return "Staff";
   if (memberRole === "viewer") return "Viewer";
   return memberRole;
+}
+
+function documentLabel(type: string | null | undefined) {
+  if (!type) return "—";
+  if (type === "carta_identita") return "Carta d'identità";
+  if (type === "patente") return "Patente";
+  if (type === "passaporto") return "Passaporto";
+  return type;
+}
+
+function documentStatus(expiry: string | null | undefined) {
+  if (!expiry) return null;
+  const today = new Date();
+  const exp = new Date(expiry);
+  const diff = (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+  if (diff < 0) return "scaduto";
+  if (diff < 30) return "in scadenza";
+  return "valido";
 }
 
 export default function Page() {
@@ -114,6 +147,12 @@ export default function Page() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [themePref, setThemePrefState] = useState<ThemePref>("system");
+  const [brandDisplayName, setBrandDisplayName] = useState("");
+  const [brandWebsiteUrl, setBrandWebsiteUrl] = useState("");
+  const [brandLogoFile, setBrandLogoFile] = useState<File | null>(null);
+  const [brandBackgroundFile, setBrandBackgroundFile] = useState<File | null>(null);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const isStaffOrAdmin = useMemo(() => {
     return ["admin", "staff"].includes(member?.role ?? "");
@@ -197,12 +236,24 @@ export default function Page() {
 
     const active = await resolveActiveClub(supabase, userId);
 
-    const { data: m, error: mErr } = await supabase
+    let { data: m, error: mErr } = await supabase
       .from("club_members")
-      .select("club_id, role, created_at, birth_date")
+      .select("club_id, role, created_at, birth_date, avatar_url")
       .eq("user_id", userId)
       .eq("club_id", active.clubId)
       .maybeSingle();
+
+    if (mErr && mErr.message.includes("avatar_url")) {
+      const fallback = await supabase
+        .from("club_members")
+        .select("club_id, role, created_at, birth_date")
+        .eq("user_id", userId)
+        .eq("club_id", active.clubId)
+        .maybeSingle();
+
+      m = fallback.data ? { ...fallback.data, avatar_url: null } : null;
+      mErr = fallback.error;
+    }
 
     if (mErr) {
       setError("Errore club_members: " + mErr.message);
@@ -215,7 +266,7 @@ export default function Page() {
 
     const { data: p, error: pErr } = await supabase
       .from("players")
-      .select("id, club_id, first_name, last_name, birth_date, shirt_number, user_id, active, created_at")
+      .select("id, club_id, first_name, last_name, birth_date, shirt_number, user_id, phone, document_type, document_number, document_expiry, avatar_url, active, created_at")
       .eq("user_id", userId)
       .eq("club_id", active.clubId)
       .maybeSingle();
@@ -233,7 +284,7 @@ export default function Page() {
     if (clubId) {
       const { data: c, error: cErr } = await supabase
         .from("clubs")
-        .select("id, name, slug")
+        .select("*")
         .eq("id", clubId)
         .maybeSingle();
 
@@ -243,9 +294,14 @@ export default function Page() {
         return;
       }
 
-      setClub((c as Club | null) ?? null);
+      const clubRow = (c as Club | null) ?? null;
+      setClub(clubRow);
+      setBrandDisplayName(clubRow?.display_name ?? clubRow?.name ?? "");
+      setBrandWebsiteUrl(clubRow?.website_url ?? "");
     } else {
       setClub(null);
+      setBrandDisplayName("");
+      setBrandWebsiteUrl("");
     }
 
     setLoading(false);
@@ -412,6 +468,142 @@ export default function Page() {
     setSendingReset(false);
   }
 
+  async function saveBranding(e: React.FormEvent) {
+    e.preventDefault();
+    if (!club || !isAdmin) return;
+
+    setSavingBranding(true);
+    setError(null);
+    setOk(null);
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      setError("Sessione non valida.");
+      setSavingBranding(false);
+      return;
+    }
+
+    const form = new FormData();
+    form.set("club_id", club.id);
+    form.set("display_name", brandDisplayName.trim());
+    form.set("website_url", brandWebsiteUrl.trim());
+    if (brandLogoFile) form.set("logo", brandLogoFile);
+    if (brandBackgroundFile) form.set("background", brandBackgroundFile);
+
+    const res = await fetch("/api/clubs/branding", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(json?.error ?? "Errore aggiornamento branding squadra.");
+      setSavingBranding(false);
+      return;
+    }
+
+    setBrandLogoFile(null);
+    setBrandBackgroundFile(null);
+    setOk("Branding squadra aggiornato.");
+    setSavingBranding(false);
+    await loadAll();
+  }
+
+  async function uploadOwnProfilePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !member || !isStaffOrAdmin) return;
+
+    setError(null);
+    setOk(null);
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      setError("Sessione non valida.");
+      return;
+    }
+
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      img.src = reader.result as string;
+    };
+
+    reader.readAsDataURL(file);
+
+    img.onload = async () => {
+      const canvas = document.createElement("canvas");
+      const MAX = 512;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height && width > MAX) {
+        height *= MAX / width;
+        width = MAX;
+      } else if (height > MAX) {
+        width *= MAX / height;
+        height = MAX;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+
+        const fileName = `staff/${member.club_id}-${Date.now()}.jpg`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("avatars")
+          .upload(fileName, blob, {
+            contentType: "image/jpeg",
+          });
+
+        if (uploadErr) {
+          setError(uploadErr.message);
+          return;
+        }
+
+        const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+
+        const res = await fetch("/api/staff/avatar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            club_id: member.club_id,
+            avatar_url: data.publicUrl,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          await supabase.storage.from("avatars").remove([fileName]);
+          setError(json?.error ?? "Errore aggiornamento foto profilo.");
+          return;
+        }
+
+        if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = "";
+        setOk("Foto profilo aggiornata.");
+        await loadAll();
+      }, "image/jpeg", 0.8);
+    };
+  }
+
   function passwordScore(p: string) {
     let s = 0;
     if (p.length >= 8) s += 1;
@@ -449,6 +641,11 @@ export default function Page() {
 
   if (loading) return <div className="card p-8">Caricamento…</div>;
 
+  const profileAvatarUrl = member?.avatar_url ?? player?.avatar_url ?? null;
+  const hasPhone = Boolean(player?.phone?.trim());
+  const hasDocument = Boolean(player?.document_type || player?.document_number);
+  const hasDocumentExpiry = Boolean(player?.document_expiry);
+
   return (
     <div className="space-y-6">
       <div className="card p-8">
@@ -464,8 +661,48 @@ export default function Page() {
         {/* PROFILO */}
         <div className="card p-6">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
+            <div className="flex min-w-0 items-center gap-4">
+              <button
+                type="button"
+                className={[
+                  "h-24 w-20 shrink-0 overflow-hidden rounded-md border border-theme bg-panel-theme",
+                  isStaffOrAdmin ? "cursor-pointer" : "cursor-default",
+                ].join(" ")}
+                onClick={() => {
+                  if (isStaffOrAdmin) profilePhotoInputRef.current?.click();
+                }}
+                title={isStaffOrAdmin ? "Modifica foto profilo" : undefined}
+              >
+                {profileAvatarUrl ? (
+                  <img
+                    src={profileAvatarUrl}
+                    alt={`${editFirst} ${editLast}`.trim() || "Profilo"}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-2xl">
+                    👤
+                  </div>
+                )}
+              </button>
+
+              {isStaffOrAdmin ? (
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={uploadOwnProfilePhoto}
+                />
+              ) : null}
+
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-base-theme">Profilo</h2>
+                <div className="mt-1 truncate text-sm text-muted-theme">
+                  {roleLabel(member?.role ?? null, !!player)}
+                  {player?.shirt_number ? ` • #${player.shirt_number}` : ""}
+                </div>
+              </div>
             </div>
 
             {isStaffOrAdmin && !profileEditing ? (
@@ -515,6 +752,59 @@ export default function Page() {
               <label className="mb-1 block text-xs text-muted-theme">Email</label>
               <input className={`${inputClass} opacity-80`} value={authEmail ?? userRow?.email ?? ""} readOnly />
             </div>
+
+            {hasPhone ? (
+              <div>
+                <div className="text-xs text-muted-theme">Telefono</div>
+                <div className="mt-1 text-base-theme font-medium">{player?.phone}</div>
+              </div>
+            ) : null}
+
+            {hasDocument ? (
+              <div>
+                <div className="text-xs text-muted-theme">Documento</div>
+                <div className="mt-1 text-base-theme font-medium">
+                  {documentLabel(player?.document_type)}
+                </div>
+                {player?.document_number ? (
+                  <div className="mt-1 text-xs text-muted-theme">
+                    {player.document_number}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {hasDocumentExpiry ? (
+              <div>
+                <div className="text-xs text-muted-theme">Scadenza documento</div>
+                <div className="mt-1 text-base-theme font-medium">
+                  {fmtDateIT(player?.document_expiry)}
+                </div>
+                {documentStatus(player?.document_expiry) ? (
+                  <div
+                    className={[
+                      "mt-1 text-xs",
+                      documentStatus(player?.document_expiry) === "scaduto"
+                        ? "text-red-500"
+                        : documentStatus(player?.document_expiry) === "in scadenza"
+                          ? "text-yellow-500"
+                          : "text-emerald-500",
+                    ].join(" ")}
+                  >
+                    {documentStatus(player?.document_expiry)}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {player ? (
+              <div>
+                <div className="text-xs text-muted-theme">Stato</div>
+                <div className="mt-1 text-base-theme font-medium">
+                  {player.active ? "Attivo" : "Non attivo"}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {isStaffOrAdmin && profileEditing ? (
@@ -577,6 +867,83 @@ export default function Page() {
               <div className="mt-1 text-base-theme font-medium">{fmtDateTimeIT(userRow?.created_at ?? null)}</div>
             </div>
           </div>
+
+          {isAdmin && club ? (
+            <form className="mt-6 border-t border-theme pt-4" onSubmit={saveBranding}>
+              <h3 className="font-semibold text-base-theme">Branding squadra</h3>
+
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-[96px_1fr]">
+                  <div>
+                    <div className="text-xs text-muted-theme">Logo attuale</div>
+                    <div className="mt-2 h-20 w-20 overflow-hidden rounded-md border border-theme bg-panel-theme">
+                      <img
+                        src={getClubLogoUrl(club)}
+                        alt={getClubDisplayName(club)}
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-theme">Nome visualizzato</label>
+                    <input
+                      className={inputClass}
+                      value={brandDisplayName}
+                      onChange={(e) => setBrandDisplayName(e.target.value)}
+                      placeholder={club.name}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Sito web squadra</label>
+                  <input
+                    className={inputClass}
+                    value={brandWebsiteUrl}
+                    onChange={(e) => setBrandWebsiteUrl(e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Logo squadra</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className={inputClass}
+                    onChange={(e) => setBrandLogoFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Sfondo app</label>
+                  <div className="mb-2 h-24 overflow-hidden rounded-md border border-theme bg-panel-theme">
+                    <img
+                      src={getClubBackgroundUrl(club)}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className={inputClass}
+                    onChange={(e) => setBrandBackgroundFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                  disabled={savingBranding}
+                  style={{ opacity: savingBranding ? 0.6 : 1 }}
+                >
+                  {savingBranding ? "Salvataggio..." : "Salva branding"}
+                </button>
+              </div>
+            </form>
+          ) : null}
         </div>
       </div>
 

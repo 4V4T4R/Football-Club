@@ -10,6 +10,8 @@ import PageBg from "@/components/PageBg";
 import InviteRedirect from "./_components/InviteRedirect";
 import ThemeClient from "@/components/ThemeClient";
 import PublicHeader from "@/components/PublicHeader";
+import { resolveActiveClub } from "@/lib/activeClub";
+import { FALLBACK_CLUB_BACKGROUND, getClubBackgroundUrl } from "@/lib/clubBranding";
 
 const bodyFont = Inter({
   subsets: ["latin"],
@@ -33,6 +35,7 @@ export default function RootLayout({
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+  const [backgroundUrl, setBackgroundUrl] = useState(FALLBACK_CLUB_BACKGROUND);
 
   const isAuthPage =
     pathname.startsWith("/login") ||
@@ -46,6 +49,13 @@ export default function RootLayout({
       if (!data.session && !isAuthPage) {
         router.replace("/login");
         return;
+      }
+
+      if (data.session?.user?.id && !isAuthPage) {
+        const active = await resolveActiveClub(supabase, data.session.user.id);
+        setBackgroundUrl(getClubBackgroundUrl(active.club));
+      } else {
+        setBackgroundUrl(FALLBACK_CLUB_BACKGROUND);
       }
 
       setLoading(false);
@@ -75,7 +85,7 @@ export default function RootLayout({
         {isAuthPage ? (
           <main>{children}</main>
         ) : (
-          <PageBg image="/assets/auth-bg.jpg">
+          <PageBg image={backgroundUrl}>
             <div className="page-bg__content min-h-screen pt-21">
               <div className="mx-auto w-full max-w-7xl px-6 pt-1 md:pt-0 grid gap-6 md:grid-cols-[210px_1fr]">
                 

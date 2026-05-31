@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -11,6 +10,13 @@ import {
   getStoredActiveClubId,
   setStoredActiveClubId,
 } from "@/lib/activeClub";
+import {
+  FALLBACK_CLUB_LOGO,
+  FALLBACK_CLUB_NAME,
+  getClubDisplayName,
+  getClubLogoUrl,
+  getClubWebsiteUrl,
+} from "@/lib/clubBranding";
 
 const NAV = [
   { href: "https://www.littleclub.it", label: "Home" },
@@ -150,7 +156,11 @@ export default function PublicHeader() {
   if (hideHeader) return null;
 
   const mobileItems = isAppSide ? APP_NAV : NAV;
+  const desktopItems = isAppSide ? [] : NAV;
   const activeClub = clubOptions.find((option) => option.id === activeClubId);
+  const brandName = activeClub ? getClubDisplayName(activeClub) : FALLBACK_CLUB_NAME;
+  const logoUrl = activeClub ? getClubLogoUrl(activeClub) : FALLBACK_CLUB_LOGO;
+  const websiteUrl = activeClub ? getClubWebsiteUrl(activeClub) : null;
   const canSwitchClub = isAppSide && isAuthed && clubOptions.length > 1;
 
   function switchClub(clubId: string) {
@@ -166,36 +176,36 @@ export default function PublicHeader() {
       <div className="bg-black/25 backdrop-blur-md border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <Link
-            href={isAppSide ? "/" : "https://www.littleclub.it"}
+            href={isAppSide ? "/" : websiteUrl ?? "/"}
             className="flex items-center gap-2 text-white"
           >
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15 overflow-hidden">
-              <Image
-                src="/assets/logo.png"
-                alt="Logo"
-                width={36}
-                height={36}
+              <img
+                src={logoUrl}
+                alt={brandName}
                 className="h-9 w-9 object-contain"
-                priority
               />
             </span>
             <span className="text-sm font-semibold tracking-wide">
-              Little Club James
+              {brandName}
             </span>
           </Link>
 
-          {/* DESKTOP: invariato */}
-          <nav className="hidden items-center gap-6 text-sm text-white/90 md:flex">
-            {NAV.map((i) => (
-              <Link
-                key={i.href}
-                href={i.href}
-                className="hover:text-white hover:underline underline-offset-4"
-              >
-                {i.label}
-              </Link>
-            ))}
-          </nav>
+          {desktopItems.length > 0 ? (
+            <nav className="hidden items-center gap-6 text-sm text-white/90 md:flex">
+              {desktopItems.map((i) => (
+                <Link
+                  key={i.href}
+                  href={i.href}
+                  className="hover:text-white hover:underline underline-offset-4"
+                >
+                  {i.label}
+                </Link>
+              ))}
+            </nav>
+          ) : (
+            <div className="hidden flex-1 md:block" />
+          )}
 
           <div className="flex items-center gap-2">
             {/* DESKTOP: invariato */}
@@ -317,13 +327,15 @@ export default function PublicHeader() {
                       <div className="h-px bg-white/10" />
 
                       {isAppSide ? (
-                        <Link
-                          href="https://www.littleclub.it"
-                          className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
-                          onClick={() => setOpen(false)}
-                        >
-                          Torna al sito Web
-                        </Link>
+                        websiteUrl ? (
+                          <Link
+                            href={websiteUrl}
+                            className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                            onClick={() => setOpen(false)}
+                          >
+                            Torna al sito Web
+                          </Link>
+                        ) : null
                       ) : (
                         <Link
                           href="/"

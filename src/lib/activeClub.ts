@@ -6,6 +6,11 @@ export type ActiveClubOption = {
   id: string;
   name: string;
   slug: string;
+  display_name?: string | null;
+  logo_url?: string | null;
+  background_url?: string | null;
+  icon_url?: string | null;
+  website_url?: string | null;
   role: string;
   source: "staff" | "player";
 };
@@ -75,16 +80,12 @@ export async function getUserClubOptions(
 
   const { data: clubs, error: clubsErr } = await supabase
     .from("clubs")
-    .select("id, name, slug")
+    .select("*")
     .in("id", clubIds);
 
   if (clubsErr) throw new Error(clubsErr.message);
 
-  const clubById = new Map(
-    ((clubs ?? []) as Array<{ id: string; name: string; slug: string }>).map(
-      (c) => [c.id, c]
-    )
-  );
+  const clubById = new Map(((clubs ?? []) as any[]).map((c) => [c.id, c]));
 
   const options: ActiveClubOption[] = [];
   const seen = new Set<string>();
@@ -97,6 +98,11 @@ export async function getUserClubOptions(
       id: club.id,
       name: club.name,
       slug: club.slug,
+      display_name: club.display_name ?? null,
+      logo_url: club.logo_url ?? null,
+      background_url: club.background_url ?? null,
+      icon_url: club.icon_url ?? null,
+      website_url: club.website_url ?? null,
       role: membership.role,
       source: "staff",
     });
@@ -110,6 +116,11 @@ export async function getUserClubOptions(
       id: club.id,
       name: club.name,
       slug: club.slug,
+      display_name: club.display_name ?? null,
+      logo_url: club.logo_url ?? null,
+      background_url: club.background_url ?? null,
+      icon_url: club.icon_url ?? null,
+      website_url: club.website_url ?? null,
       role: "player",
       source: "player",
     });
