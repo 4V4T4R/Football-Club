@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import MapModal from "@/components/MapModal";
+import PlaceAutocomplete, { PlaceValue } from "@/components/PlaceAutocomplete";
+import EventActionsMenu from "@/components/EventActionsMenu";
 import { resolveActiveClub } from "@/lib/activeClub";
 
 type EventRow = {
@@ -41,6 +43,16 @@ function fmtDateTimeIT(iso: string) {
   }).format(d);
 }
 
+function toIso(dtLocal: string) {
+  return new Date(dtLocal).toISOString();
+}
+
+function toLocalInputValue(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function typeLabel(t: EventRow["type"]) {
   return t === "training" ? "Allenamento" : t === "match" ? "Partita" : "Riunione";
 }
@@ -64,6 +76,19 @@ export default function ConvocazioniPage() {
     Record<string, "yes" | "no" | null>
   >({});
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editType, setEditType] = useState<EventRow["type"]>("training");
+  const [editStartAt, setEditStartAt] = useState("");
+  const [editLocationText, setEditLocationText] = useState("");
+  const [editPlace, setEditPlace] = useState<PlaceValue | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    kind: "update" | "delete";
+    event: EventRow;
+  } | null>(null);
+
   // ✅ popup mappa (solo se ci sono coordinate)
   const [mapOpen, setMapOpen] = useState(false);
   const [mapEv, setMapEv] = useState<EventRow | null>(null);
@@ -76,6 +101,7 @@ export default function ConvocazioniPage() {
 
   const hasStaffEvents = staffEvents.length > 0;
   const hasPlayerEvents = playerEvents.length > 0;
+  const canEditSubmit = useMemo(() => editTitle.trim().length > 0 && !!editStartAt, [editTitle, editStartAt]);
 
   useEffect(() => {
     load();
@@ -294,6 +320,106 @@ export default function ConvocazioniPage() {
     setPlayerStatusByEvent(map);
   }
 
+  function startEditEvent(ev: EventRow) {
+    setEditingEvent(ev);
+    setEditTitle(ev.title);
+    setEditType(ev.type);
+    setEditStartAt(toLocalInputValue(ev.start_at));
+    setEditLocationText(ev.location_address ?? ev.location ?? "");
+    setEditPlace(
+      ev.location_place_id && ev.location_address && ev.location_lat != null && ev.location_lng != null
+        ? {
+            placeId: ev.location_place_id,
+            address: ev.location_address,
+            lat: ev.location_lat,
+            lng: ev.location_lng,
+          }
+        : null
+    );
+    setEditOpen(true);
+    setError(null);
+  }
+
+  function closeEditEvent() {
+    setEditOpen(false);
+    setEditingEvent(null);
+    setEditTitle("");
+    setEditType("training");
+    setEditStartAt("");
+    setEditLocationText("");
+    setEditPlace(null);
+  }
+
+  async function manageEvent(payload: Record<string, any>) {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      throw new Error("Sessione non valida.");
+    }
+
+    const res = await fetch("/api/events/manage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json?.error ?? "Errore gestione evento.");
+    return json;
+  }
+
+  function updateEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingEvent) return;
+    setConfirmAction({ kind: "update", event: editingEvent });
+  }
+
+  function deleteEvent(ev: EventRow) {
+    setConfirmAction({ kind: "delete", event: ev });
+  }
+
+  async function executeConfirmedEventAction() {
+    if (!confirmAction) return;
+    setSavingEvent(true);
+    setError(null);
+
+    try {
+      if (confirmAction.kind === "update") {
+        await manageEvent({
+          action: "update",
+          event_id: confirmAction.event.id,
+          title: editTitle.trim(),
+          type: editType,
+          start_at: toIso(editStartAt),
+          location: editPlace ? editPlace.address : editLocationText.trim() || null,
+          location_address: editPlace ? editPlace.address : null,
+          location_place_id: editPlace ? editPlace.placeId : null,
+          location_lat: editPlace ? editPlace.lat : null,
+          location_lng: editPlace ? editPlace.lng : null,
+        });
+
+        closeEditEvent();
+      } else {
+        await manageEvent({ action: "delete", event_id: confirmAction.event.id });
+        if (editingEvent?.id === confirmAction.event.id) closeEditEvent();
+      }
+
+      setConfirmAction(null);
+      await load();
+    } catch (err: any) {
+      setError(
+        err?.message ??
+          (confirmAction.kind === "update" ? "Errore aggiornamento evento." : "Errore eliminazione evento.")
+      );
+    } finally {
+      setSavingEvent(false);
+    }
+  }
+
   const title = useMemo(() => (isStaff ? "Convocazioni" : "Le mie convocazioni"), [isStaff]);
 
   if (loading) return <div className="card p-8">Caricamento…</div>;
@@ -372,19 +498,14 @@ export default function ConvocazioniPage() {
                           </div>
                         </div>
 
-                        <div className="shrink-0 flex flex-col gap-2">
-                          <Link
-                            className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-sm text-center"
-                            href={"/eventi/" + ev.id}
-                          >
-                            Convoca →
-                          </Link>
-                          <Link
-                            className="rounded-md border border-theme bg-panel-theme px-3 py-2 text-sm text-center"
-                            href={"/eventi/" + ev.id + "/risposte"}
-                          >
-                            Risposte →
-                          </Link>
+                        <div className="shrink-0">
+                          <EventActionsMenu
+                            eventId={ev.id}
+                            eventTitle={ev.title}
+                            onEdit={() => startEditEvent(ev)}
+                            onDelete={() => deleteEvent(ev)}
+                            disabled={savingEvent}
+                          />
                         </div>
                       </div>
                     </div>
@@ -393,7 +514,7 @@ export default function ConvocazioniPage() {
               </div>
 
               {/* DESKTOP TABLE */}
-              <div className="mt-4 hidden md:block overflow-hidden rounded-xl border border-theme">
+              <div className="mt-4 hidden md:block rounded-xl border border-theme">
                 <table className="w-full text-sm table-fixed">
                   <thead>
                     <tr className="bg-panel-theme">
@@ -452,19 +573,14 @@ export default function ConvocazioniPage() {
                           </td>
 
                           <td className="px-3 py-3">
-                            <div className="flex flex-col items-end gap-2">
-                              <Link
-                                className="rounded-md border border-theme bg-panel-theme px-3 py-1"
-                                href={"/eventi/" + ev.id}
-                              >
-                                Convoca →
-                              </Link>
-                              <Link
-                                className="rounded-md border border-theme bg-panel-theme px-3 py-1"
-                                href={"/eventi/" + ev.id + "/risposte"}
-                              >
-                                Risposte →
-                              </Link>
+                            <div className="flex justify-end">
+                              <EventActionsMenu
+                                eventId={ev.id}
+                                eventTitle={ev.title}
+                                onEdit={() => startEditEvent(ev)}
+                                onDelete={() => deleteEvent(ev)}
+                                disabled={savingEvent}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -616,6 +732,165 @@ export default function ConvocazioniPage() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {isStaff && editOpen && editingEvent && (
+        <div className="fixed inset-0 z-[60]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi"
+            onClick={closeEditEvent}
+          />
+
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-base-theme">Modifica evento</h2>
+                  <p className="mt-1 text-xs text-muted-theme">
+                    Prima del salvataggio ti verrà chiesta conferma.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                  onClick={closeEditEvent}
+                  title="Chiudi"
+                  aria-label="Chiudi modifica evento"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form className="mt-4 space-y-3" onSubmit={updateEvent}>
+                <input
+                  className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                  placeholder="Titolo"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
+
+                <select
+                  className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                  value={editType}
+                  onChange={(e) => setEditType(e.target.value as EventRow["type"])}
+                >
+                  <option value="training">Allenamento</option>
+                  <option value="match">Partita</option>
+                  <option value="meeting">Riunione</option>
+                </select>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Data e ora</label>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-md border border-theme bg-panel-theme px-3 py-2"
+                    value={editStartAt}
+                    onChange={(e) => setEditStartAt(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted-theme">Luogo</label>
+                  <PlaceAutocomplete
+                    value={editPlace}
+                    fallbackText={editLocationText}
+                    onChange={(v) => {
+                      setEditPlace(v);
+                      setEditLocationText(v?.address ?? "");
+                    }}
+                    placeholder="Via… / Stadio… / Campo…"
+                    inputClassName="w-full h-10 rounded-md border border-theme bg-panel-theme px-3 text-[16px] md:text-sm"
+                    onInputChange={(txt: string) => {
+                      setEditLocationText(txt);
+                      setEditPlace(null);
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="submit"
+                    className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                    disabled={!canEditSubmit || savingEvent}
+                    style={{ opacity: canEditSubmit && !savingEvent ? 1 : 0.6 }}
+                  >
+                    {savingEvent ? "Salvataggio..." : "Salva"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm text-red-500"
+                    onClick={() => deleteEvent(editingEvent)}
+                    disabled={savingEvent}
+                    style={{ opacity: savingEvent ? 0.6 : 1 }}
+                  >
+                    Elimina
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isStaff && confirmAction && (
+        <div className="fixed inset-0 z-[70]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Chiudi conferma"
+            onClick={() => {
+              if (!savingEvent) setConfirmAction(null);
+            }}
+          />
+
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-sm -translate-x-1/2 -translate-y-1/2">
+            <div className="card p-6">
+              <h2 className="text-lg font-semibold text-base-theme">
+                {confirmAction.kind === "update" ? "Conferma modifiche" : "Elimina evento"}
+              </h2>
+              <p className="mt-2 text-sm text-muted-theme">
+                {confirmAction.kind === "update"
+                  ? `Vuoi salvare le modifiche a "${confirmAction.event.title}"?`
+                  : `Vuoi eliminare definitivamente "${confirmAction.event.title}"?`}
+              </p>
+              <p className="mt-2 text-xs text-muted-theme">
+                I giocatori convocati riceveranno una notifica.
+              </p>
+
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                  onClick={() => setConfirmAction(null)}
+                  disabled={savingEvent}
+                  style={{ opacity: savingEvent ? 0.6 : 1 }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    "rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm",
+                    confirmAction.kind === "delete" ? "text-red-500" : "",
+                  ].join(" ")}
+                  onClick={executeConfirmedEventAction}
+                  disabled={savingEvent}
+                  style={{ opacity: savingEvent ? 0.6 : 1 }}
+                >
+                  {savingEvent
+                    ? "Attendi..."
+                    : confirmAction.kind === "update"
+                      ? "Salva"
+                      : "Elimina"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

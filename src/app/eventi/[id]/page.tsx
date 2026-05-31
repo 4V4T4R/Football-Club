@@ -177,6 +177,31 @@ export default function EventDetailPage() {
       }
     }
 
+    if (invited.size > 0) {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+
+      if (token) {
+        await fetch("/api/notifications", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            club_id: ev.club_id,
+            title: "Convocazione aggiornata",
+            body: `Sei stato convocato per ${ev.title}.`,
+            type: "convocation",
+            audience: "player",
+            player_ids: Array.from(invited),
+            entity_type: "event",
+            entity_id: eventId,
+          }),
+        }).catch(() => null);
+      }
+    }
+
     setSaving(false);
     router.push("/eventi");
   }

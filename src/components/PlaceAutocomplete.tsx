@@ -14,6 +14,7 @@ type Props = {
   onChange: (v: PlaceValue | null) => void;
   placeholder?: string;
   inputClassName?: string;
+  fallbackText?: string;
 
   // ✅ opzionale: ti restituisce il testo mentre scrivi (serve per "testo libero")
   onInputChange?: (txt: string) => void;
@@ -46,9 +47,10 @@ export default function PlaceAutocomplete({
   onChange,
   placeholder,
   inputClassName,
+  fallbackText,
   onInputChange,
 }: Props) {
-  const [query, setQuery] = useState<string>(value?.address ?? "");
+  const [query, setQuery] = useState<string>(value?.address ?? fallbackText ?? "");
   const debounced = useDebounced(query, 250);
 
   const [open, setOpen] = useState(false);
@@ -61,8 +63,8 @@ export default function PlaceAutocomplete({
 
   // se cambia value dall’esterno (reset form), aggiorna query
   useEffect(() => {
-    setQuery(value?.address ?? "");
-  }, [value?.address]);
+    setQuery(value?.address ?? fallbackText ?? "");
+  }, [value?.address, fallbackText]);
 
   // chiudi click fuori
   useEffect(() => {

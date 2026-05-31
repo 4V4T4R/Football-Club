@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { setThemePref } from "@/components/ThemeClient";
 import { resolveActiveClub } from "@/lib/activeClub";
 import { getClubBackgroundUrl, getClubDisplayName, getClubLogoUrl } from "@/lib/clubBranding";
@@ -48,9 +48,21 @@ type MemberRow = {
   created_at: string;
   birth_date: string | null;
   avatar_url: string | null;
+  phone: string | null;
+  document_type: string | null;
+  document_number: string | null;
+  document_expiry: string | null;
 };
 
 type ThemePref = "system" | "light" | "dark";
+
+type NotificationPrefs = {
+  enabled: boolean;
+  event_created: boolean;
+  convocation: boolean;
+  event_changed: boolean;
+  document_expiry: boolean;
+};
 
 function fmtDateIT(isoOrYmd: string | null | undefined) {
   if (!isoOrYmd) return "—";
@@ -101,8 +113,6 @@ function documentStatus(expiry: string | null | undefined) {
 }
 
 export default function Page() {
-  const router = useRouter();
-
   const [loading, setLoading] = useState(true);
 
   // messaggi globali
@@ -124,6 +134,10 @@ export default function Page() {
   const [editFirst, setEditFirst] = useState("");
   const [editLast, setEditLast] = useState("");
   const [editBirth, setEditBirth] = useState<string>(""); // YYYY-MM-DD, opzionale
+  const [editPhone, setEditPhone] = useState("");
+  const [editDocumentType, setEditDocumentType] = useState("");
+  const [editDocumentNumber, setEditDocumentNumber] = useState("");
+  const [editDocumentExpiry, setEditDocumentExpiry] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   // password (nel modal)
@@ -145,6 +159,16 @@ export default function Page() {
 
   // popup notifiche / tema
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>({
+    enabled: true,
+    event_created: true,
+    convocation: true,
+    event_changed: true,
+    document_expiry: true,
+  });
+  const [notifPrefsLoading, setNotifPrefsLoading] = useState(false);
+  const [notifPrefsSaving, setNotifPrefsSaving] = useState(false);
+  const [notifPrefsError, setNotifPrefsError] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [themePref, setThemePrefState] = useState<ThemePref>("system");
   const [brandDisplayName, setBrandDisplayName] = useState("");
@@ -153,6 +177,8 @@ export default function Page() {
   const [brandBackgroundFile, setBrandBackgroundFile] = useState<File | null>(null);
   const [savingBranding, setSavingBranding] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const brandLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const brandBackgroundInputRef = useRef<HTMLInputElement | null>(null);
 
   const isStaffOrAdmin = useMemo(() => {
     return ["admin", "staff"].includes(member?.role ?? "");
@@ -168,10 +194,27 @@ export default function Page() {
     const changed =
       (editFirst ?? "") !== (userRow?.first_name ?? "") ||
       (editLast ?? "") !== (userRow?.last_name ?? "") ||
-      (editBirth ?? "") !== (member?.birth_date ?? "");
+      (editBirth ?? "") !== (member?.birth_date ?? "") ||
+      (editPhone ?? "") !== (player?.phone ?? member?.phone ?? "") ||
+      (editDocumentType ?? "") !== (player?.document_type ?? member?.document_type ?? "") ||
+      (editDocumentNumber ?? "") !== (player?.document_number ?? member?.document_number ?? "") ||
+      (editDocumentExpiry ?? "") !== (player?.document_expiry ?? member?.document_expiry ?? "");
 
     return changed;
-  }, [isStaffOrAdmin, profileEditing, editFirst, editLast, editBirth, userRow, member]);
+  }, [
+    isStaffOrAdmin,
+    profileEditing,
+    editFirst,
+    editLast,
+    editBirth,
+    editPhone,
+    editDocumentType,
+    editDocumentNumber,
+    editDocumentExpiry,
+    userRow,
+    member,
+    player,
+  ]);
 
   const score = useMemo(() => passwordScore(pwd1), [pwd1]);
 
@@ -238,12 +281,19 @@ export default function Page() {
 
     let { data: m, error: mErr } = await supabase
       .from("club_members")
-      .select("club_id, role, created_at, birth_date, avatar_url")
+      .select("club_id, role, created_at, birth_date, avatar_url, phone, document_type, document_number, document_expiry")
       .eq("user_id", userId)
       .eq("club_id", active.clubId)
       .maybeSingle();
 
-    if (mErr && mErr.message.includes("avatar_url")) {
+    const memberErrMessage = mErr?.message ?? "";
+
+    if (
+      mErr &&
+      ["avatar_url", "phone", "document_type", "document_number", "document_expiry"].some((col) =>
+        memberErrMessage.includes(col)
+      )
+    ) {
       const fallback = await supabase
         .from("club_members")
         .select("club_id, role, created_at, birth_date")
@@ -251,7 +301,16 @@ export default function Page() {
         .eq("club_id", active.clubId)
         .maybeSingle();
 
-      m = fallback.data ? { ...fallback.data, avatar_url: null } : null;
+      m = fallback.data
+        ? {
+            ...fallback.data,
+            avatar_url: null,
+            phone: null,
+            document_type: null,
+            document_number: null,
+            document_expiry: null,
+          }
+        : null;
       mErr = fallback.error;
     }
 
@@ -278,6 +337,10 @@ export default function Page() {
     }
 
     setPlayer((p as PlayerRow | null) ?? null);
+    setEditPhone(p?.phone ?? m?.phone ?? "");
+    setEditDocumentType(p?.document_type ?? m?.document_type ?? "");
+    setEditDocumentNumber(p?.document_number ?? m?.document_number ?? "");
+    setEditDocumentExpiry(p?.document_expiry ?? m?.document_expiry ?? "");
 
     const clubId = active.clubId ?? (m?.club_id as string | undefined) ?? (p?.club_id as string | undefined) ?? null;
 
@@ -312,6 +375,47 @@ export default function Page() {
     loadThemePref();
   }, []);
 
+  useEffect(() => {
+    if (notifOpen) {
+      loadNotificationPrefs();
+    }
+  }, [notifOpen, club?.id]);
+
+  useEffect(() => {
+    function openPanel(panel: string | null) {
+    if (panel === "password") {
+      setPwdError(null);
+      setPwdOk(null);
+      setPwdOpen(true);
+      setNotifOpen(false);
+      setThemeOpen(false);
+    }
+
+    if (panel === "notifiche") {
+      setNotifOpen(true);
+      setPwdOpen(false);
+      setThemeOpen(false);
+    }
+
+    if (panel === "tema") {
+      loadThemePref();
+      setThemeOpen(true);
+      setPwdOpen(false);
+      setNotifOpen(false);
+    }
+    }
+
+    openPanel(new URLSearchParams(window.location.search).get("panel"));
+
+    function onSettingsPanel(event: Event) {
+      const panel = (event as CustomEvent<string>).detail;
+      openPanel(panel);
+    }
+
+    window.addEventListener("footballclub:settings-panel", onSettingsPanel);
+    return () => window.removeEventListener("footballclub:settings-panel", onSettingsPanel);
+  }, []);
+
   function startEditProfile() {
     if (!isStaffOrAdmin) return;
     setProfileEditing(true);
@@ -324,6 +428,16 @@ export default function Page() {
     setEditFirst(userRow?.first_name ?? "");
     setEditLast(userRow?.last_name ?? "");
     setEditBirth(member?.birth_date ?? "");
+    setEditPhone(player?.phone ?? member?.phone ?? "");
+    setEditDocumentType(player?.document_type ?? member?.document_type ?? "");
+    setEditDocumentNumber(player?.document_number ?? member?.document_number ?? "");
+    setEditDocumentExpiry(player?.document_expiry ?? member?.document_expiry ?? "");
+  }
+
+  function clearSettingsPanel() {
+    if (typeof window === "undefined") return;
+    if (!new URLSearchParams(window.location.search).has("panel")) return;
+    window.history.replaceState(null, "", window.location.pathname);
   }
 
   async function saveProfile() {
@@ -337,6 +451,10 @@ export default function Page() {
     const first = editFirst.trim() ? editFirst.trim() : null;
     const last = editLast.trim() ? editLast.trim() : null;
     const birth = editBirth.trim() ? editBirth.trim() : null;
+    const phone = editPhone.trim() ? editPhone.trim() : null;
+    const documentType = editDocumentType.trim() ? editDocumentType.trim() : null;
+    const documentNumber = editDocumentNumber.trim() ? editDocumentNumber.trim() : null;
+    const documentExpiry = editDocumentExpiry.trim() ? editDocumentExpiry.trim() : null;
 
     // 1) users (nome/cognome)
     const { error: updErr } = await supabase
@@ -355,23 +473,42 @@ export default function Page() {
     const userId = session.session?.user?.id ?? null;
 
     if (userId) {
+      const memberUpdate: Record<string, string | null> = { birth_date: birth };
+
+      if (!player?.id) {
+        memberUpdate.phone = phone;
+        memberUpdate.document_type = documentType;
+        memberUpdate.document_number = documentNumber;
+        memberUpdate.document_expiry = documentExpiry;
+      }
+
       const { error: updMemberErr } = await supabase
         .from("club_members")
-        .update({ birth_date: birth })
+        .update(memberUpdate)
         .eq("user_id", userId)
         .eq("club_id", member?.club_id);
 
       if (updMemberErr) {
-        setError(updMemberErr.message);
+        setError(
+          updMemberErr.message.includes("document_") || updMemberErr.message.includes("phone")
+            ? "Per salvare telefono/documenti staff esegui prima la migration club_members profilo."
+            : updMemberErr.message
+        );
         setSavingProfile(false);
         return;
       }
 
-      // 3) se è anche player: aggiorna anche players.birth_date (coerenza)
-      if (player?.id && birth) {
+      // 3) se è anche player: aggiorna dati profilo giocatore
+      if (player?.id) {
         const { error: updPlayerErr } = await supabase
           .from("players")
-          .update({ birth_date: birth })
+          .update({
+            birth_date: birth ?? player.birth_date,
+            phone,
+            document_type: documentType,
+            document_number: documentNumber,
+            document_expiry: documentExpiry,
+          })
           .eq("id", player.id);
 
         if (updPlayerErr) {
@@ -508,6 +645,8 @@ export default function Page() {
 
     setBrandLogoFile(null);
     setBrandBackgroundFile(null);
+    if (brandLogoInputRef.current) brandLogoInputRef.current.value = "";
+    if (brandBackgroundInputRef.current) brandBackgroundInputRef.current.value = "";
     setOk("Branding squadra aggiornato.");
     setSavingBranding(false);
     await loadAll();
@@ -628,23 +767,103 @@ export default function Page() {
     return `${s}s`;
   }
 
-  function themeLabel(v: ThemePref) {
-    if (v === "system") return "Tema Sistema";
-    if (v === "light") return "Chiaro";
-    return "Oscuro";
-  }
-
   function applyThemeChoice(v: ThemePref) {
     setThemePrefState(v);
     setThemePref(v);
   }
 
+  async function loadNotificationPrefs() {
+    if (!club?.id) return;
+
+    setNotifPrefsLoading(true);
+    setNotifPrefsError(null);
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      setNotifPrefsError("Sessione non valida.");
+      setNotifPrefsLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/notifications/preferences?club_id=${encodeURIComponent(club.id)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setNotifPrefsError(
+        json?.error?.includes("notification_preferences")
+          ? "Per usare le notifiche esegui prima la migration notifiche su Supabase."
+          : json?.error ?? "Errore caricamento preferenze notifiche."
+      );
+      setNotifPrefsLoading(false);
+      return;
+    }
+
+    setNotifPrefs(json.preferences as NotificationPrefs);
+    setNotifPrefsLoading(false);
+  }
+
+  function updateNotifPref<K extends keyof NotificationPrefs>(key: K, value: NotificationPrefs[K]) {
+    setNotifPrefs((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveNotificationPrefs(e: React.FormEvent) {
+    e.preventDefault();
+    if (!club?.id) return;
+
+    setNotifPrefsSaving(true);
+    setNotifPrefsError(null);
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      setNotifPrefsError("Sessione non valida.");
+      setNotifPrefsSaving(false);
+      return;
+    }
+
+    const res = await fetch("/api/notifications/preferences", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        club_id: club.id,
+        ...notifPrefs,
+      }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setNotifPrefsError(json?.error ?? "Errore salvataggio preferenze.");
+      setNotifPrefsSaving(false);
+      return;
+    }
+
+    setNotifPrefs(json.preferences as NotificationPrefs);
+    setNotifPrefsSaving(false);
+    setOk("Preferenze notifiche aggiornate.");
+    setNotifOpen(false);
+    clearSettingsPanel();
+  }
+
   if (loading) return <div className="card p-8">Caricamento…</div>;
 
   const profileAvatarUrl = member?.avatar_url ?? player?.avatar_url ?? null;
-  const hasPhone = Boolean(player?.phone?.trim());
-  const hasDocument = Boolean(player?.document_type || player?.document_number);
-  const hasDocumentExpiry = Boolean(player?.document_expiry);
+  const profilePhone = player?.phone ?? member?.phone ?? null;
+  const profileDocumentType = player?.document_type ?? member?.document_type ?? null;
+  const profileDocumentNumber = player?.document_number ?? member?.document_number ?? null;
+  const profileDocumentExpiry = player?.document_expiry ?? member?.document_expiry ?? null;
+  const hasPhone = Boolean(profilePhone?.trim());
+  const hasDocument = Boolean(profileDocumentType || profileDocumentNumber);
+  const hasDocumentExpiry = Boolean(profileDocumentExpiry);
 
   return (
     <div className="space-y-6">
@@ -654,6 +873,46 @@ export default function Page() {
 
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
         {ok && <p className="mt-4 text-sm text-emerald-600">{ok}</p>}
+      </div>
+
+      <div className="card p-4 md:hidden">
+        <h2 className="text-base font-semibold text-base-theme">Preferenze</h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link
+            href="/staff"
+            className="rounded-md border border-theme bg-panel-theme px-3 py-3 text-center text-sm"
+          >
+            Staff
+          </Link>
+          <button
+            type="button"
+            className="rounded-md border border-theme bg-panel-theme px-3 py-3 text-sm"
+            onClick={() => {
+              setPwdError(null);
+              setPwdOk(null);
+              setPwdOpen(true);
+            }}
+          >
+            Password
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-theme bg-panel-theme px-3 py-3 text-sm"
+            onClick={() => setNotifOpen(true)}
+          >
+            Notifiche
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-theme bg-panel-theme px-3 py-3 text-sm"
+            onClick={() => {
+              loadThemePref();
+              setThemeOpen(true);
+            }}
+          >
+            Tema
+          </button>
+        </div>
       </div>
 
       {/* RIGA 1: PROFILO | SQUADRA */}
@@ -753,45 +1012,91 @@ export default function Page() {
               <input className={`${inputClass} opacity-80`} value={authEmail ?? userRow?.email ?? ""} readOnly />
             </div>
 
-            {hasPhone ? (
+            {profileEditing && isStaffOrAdmin ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted-theme">Telefono</label>
+                <input
+                  className={inputClass}
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                />
+              </div>
+            ) : hasPhone ? (
               <div>
                 <div className="text-xs text-muted-theme">Telefono</div>
-                <div className="mt-1 text-base-theme font-medium">{player?.phone}</div>
+                <div className="mt-1 text-base-theme font-medium">{profilePhone}</div>
               </div>
             ) : null}
 
-            {hasDocument ? (
+            {profileEditing && isStaffOrAdmin ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted-theme">Documento</label>
+                <select
+                  className={inputClass}
+                  value={editDocumentType}
+                  onChange={(e) => setEditDocumentType(e.target.value)}
+                >
+                  <option value="">Nessun documento</option>
+                  <option value="carta_identita">Carta d'identità</option>
+                  <option value="patente">Patente</option>
+                  <option value="passaporto">Passaporto</option>
+                </select>
+              </div>
+            ) : hasDocument ? (
               <div>
                 <div className="text-xs text-muted-theme">Documento</div>
                 <div className="mt-1 text-base-theme font-medium">
-                  {documentLabel(player?.document_type)}
+                  {documentLabel(profileDocumentType)}
                 </div>
-                {player?.document_number ? (
+                {profileDocumentNumber ? (
                   <div className="mt-1 text-xs text-muted-theme">
-                    {player.document_number}
+                    {profileDocumentNumber}
                   </div>
                 ) : null}
               </div>
             ) : null}
 
-            {hasDocumentExpiry ? (
+            {profileEditing && isStaffOrAdmin ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted-theme">Numero documento</label>
+                <input
+                  className={inputClass}
+                  value={editDocumentNumber}
+                  onChange={(e) => setEditDocumentNumber(e.target.value)}
+                  disabled={!editDocumentType}
+                />
+              </div>
+            ) : null}
+
+            {profileEditing && isStaffOrAdmin ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted-theme">Scadenza documento</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editDocumentExpiry}
+                  onChange={(e) => setEditDocumentExpiry(e.target.value)}
+                  disabled={!editDocumentType}
+                />
+              </div>
+            ) : hasDocumentExpiry ? (
               <div>
                 <div className="text-xs text-muted-theme">Scadenza documento</div>
                 <div className="mt-1 text-base-theme font-medium">
-                  {fmtDateIT(player?.document_expiry)}
+                  {fmtDateIT(profileDocumentExpiry)}
                 </div>
-                {documentStatus(player?.document_expiry) ? (
+                {documentStatus(profileDocumentExpiry) ? (
                   <div
                     className={[
                       "mt-1 text-xs",
-                      documentStatus(player?.document_expiry) === "scaduto"
+                      documentStatus(profileDocumentExpiry) === "scaduto"
                         ? "text-red-500"
-                        : documentStatus(player?.document_expiry) === "in scadenza"
+                        : documentStatus(profileDocumentExpiry) === "in scadenza"
                           ? "text-yellow-500"
                           : "text-emerald-500",
                     ].join(" ")}
                   >
-                    {documentStatus(player?.document_expiry)}
+                    {documentStatus(profileDocumentExpiry)}
                   </div>
                 ) : null}
               </div>
@@ -873,64 +1178,81 @@ export default function Page() {
               <h3 className="font-semibold text-base-theme">Branding squadra</h3>
 
               <div className="mt-4 grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-[96px_1fr]">
+                <input
+                  ref={brandLogoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => setBrandLogoFile(e.target.files?.[0] ?? null)}
+                />
+                <input
+                  ref={brandBackgroundInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => setBrandBackgroundFile(e.target.files?.[0] ?? null)}
+                />
+
+                <div className="grid gap-4 sm:grid-cols-[112px_1fr]">
                   <div>
                     <div className="text-xs text-muted-theme">Logo attuale</div>
-                    <div className="mt-2 h-20 w-20 overflow-hidden rounded-md border border-theme bg-panel-theme">
+                    <button
+                      type="button"
+                      className="mt-2 h-24 w-24 overflow-hidden rounded-md border border-theme bg-panel-theme p-2"
+                      onClick={() => brandLogoInputRef.current?.click()}
+                      title="Modifica logo squadra"
+                    >
                       <img
                         src={getClubLogoUrl(club)}
                         alt={getClubDisplayName(club)}
                         className="h-full w-full object-contain"
                       />
+                    </button>
+                    {brandLogoFile ? (
+                      <div className="mt-2 text-xs text-muted-theme">Nuovo logo selezionato</div>
+                    ) : null}
+                  </div>
+
+                  <div className="grid gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-theme">Nome visualizzato</label>
+                      <input
+                        className={inputClass}
+                        value={brandDisplayName}
+                        onChange={(e) => setBrandDisplayName(e.target.value)}
+                        placeholder={club.name}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-theme">Sito web</label>
+                      <input
+                        className={inputClass}
+                        value={brandWebsiteUrl}
+                        onChange={(e) => setBrandWebsiteUrl(e.target.value)}
+                        placeholder="https://..."
+                      />
                     </div>
                   </div>
-
-                  <div>
-                    <label className="mb-1 block text-xs text-muted-theme">Nome visualizzato</label>
-                    <input
-                      className={inputClass}
-                      value={brandDisplayName}
-                      onChange={(e) => setBrandDisplayName(e.target.value)}
-                      placeholder={club.name}
-                    />
-                  </div>
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs text-muted-theme">Sito web squadra</label>
-                  <input
-                    className={inputClass}
-                    value={brandWebsiteUrl}
-                    onChange={(e) => setBrandWebsiteUrl(e.target.value)}
-                    placeholder="https://..."
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs text-muted-theme">Logo squadra</label>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className={inputClass}
-                    onChange={(e) => setBrandLogoFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs text-muted-theme">Sfondo app</label>
-                  <div className="mb-2 h-24 overflow-hidden rounded-md border border-theme bg-panel-theme">
+                  <div className="mb-1 text-xs text-muted-theme">Sfondo app</div>
+                  <button
+                    type="button"
+                    className="h-28 w-full overflow-hidden rounded-md border border-theme bg-panel-theme"
+                    onClick={() => brandBackgroundInputRef.current?.click()}
+                    title="Modifica sfondo app"
+                  >
                     <img
                       src={getClubBackgroundUrl(club)}
                       alt=""
                       className="h-full w-full object-cover"
                     />
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className={inputClass}
-                    onChange={(e) => setBrandBackgroundFile(e.target.files?.[0] ?? null)}
-                  />
+                  </button>
+                  {brandBackgroundFile ? (
+                    <div className="mt-2 text-xs text-muted-theme">Nuovo sfondo selezionato</div>
+                  ) : null}
                 </div>
 
                 <button
@@ -947,109 +1269,6 @@ export default function Page() {
         </div>
       </div>
 
-      {/* RIGA 2: AZIONI (Staff/Password/Notifiche/Tema) | IN ARRIVO */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* AZIONI */}
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold text-base-theme">Info e Preferenze</h2>
-          <p className="mt-1 text-sm text-muted-theme">Gestisci le funzioni del tuo account.</p>
-
-          <div className="mt-4 space-y-3">
-            {/* STAFF */}
-            <button
-              type="button"
-              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
-              onClick={() => router.push("/staff")}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-base-theme">Staff</div>
-                  <div className="mt-1 text-xs text-muted-theme">Qui puoi vedere il tuo staff</div>
-                </div>
-                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
-                  →
-                </div>
-              </div>
-            </button>
-
-            {/* PASSWORD */}
-            <button
-              type="button"
-              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
-              onClick={() => {
-                setPwdError(null);
-                setPwdOk(null);
-                setPwdOpen(true);
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-base-theme">Password</div>
-                  <div className="mt-1 text-xs text-muted-theme">Qui puoi modificare la tua password</div>
-                </div>
-                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
-                  →
-                </div>
-              </div>
-            </button>
-
-            {/* NOTIFICHE */}
-            <button
-              type="button"
-              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
-              onClick={() => setNotifOpen(true)}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-base-theme">Notifiche</div>
-                  <div className="mt-1 text-xs text-muted-theme">Qui potrai gestire le tue notifiche</div>
-                </div>
-                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
-                  →
-                </div>
-              </div>
-            </button>
-
-            {/* TEMA */}
-            <button
-              type="button"
-              className="w-full rounded-xl border border-theme bg-panel-theme p-3 text-left"
-              onClick={() => {
-                loadThemePref();
-                setThemeOpen(true);
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-base-theme">Tema</div>
-                  <div className="mt-1 text-xs text-muted-theme">{themeLabel(themePref)}</div>
-                </div>
-                <div className="shrink-0 rounded-md border border-theme bg-panel-theme px-3 py-1 text-sm">
-                  →
-                </div>
-              </div>
-            </button>
-
-            {isAdmin ? (
-              <div className="text-[11px] text-muted-theme">
-                Nota: solo l’Admin può creare/eliminare membri dello staff.
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        {/* IN ARRIVO */}
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold text-base-theme">In arrivo</h2>
-          <ul className="mt-3 space-y-2 text-sm text-muted-theme">
-            <li>• Notifiche avanzate per staff e giocatori</li>
-            <li>• Privacy, consensi ed esportazione dati</li>
-            <li>• Gestione completa dei membri</li>
-            <li>• Preferenze account sincronizzate</li>
-          </ul>
-        </div>
-      </div>
-
       {/* ===== MODAL PASSWORD ===== */}
       {pwdOpen && (
         <div className="fixed inset-0 z-[80]">
@@ -1057,7 +1276,10 @@ export default function Page() {
             type="button"
             className="absolute inset-0 bg-black/50"
             aria-label="Chiudi"
-            onClick={() => setPwdOpen(false)}
+            onClick={() => {
+              setPwdOpen(false);
+              clearSettingsPanel();
+            }}
           />
 
           <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2">
@@ -1071,7 +1293,10 @@ export default function Page() {
                 <button
                   type="button"
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
-                  onClick={() => setPwdOpen(false)}
+                  onClick={() => {
+                    setPwdOpen(false);
+                    clearSettingsPanel();
+                  }}
                   title="Chiudi"
                   aria-label="Chiudi password"
                 >
@@ -1214,25 +1439,116 @@ export default function Page() {
             type="button"
             className="absolute inset-0 bg-black/50"
             aria-label="Chiudi"
-            onClick={() => setNotifOpen(false)}
+            onClick={() => {
+              setNotifOpen(false);
+              clearSettingsPanel();
+            }}
           />
           <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
             <div className="card p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-base-theme">Notifiche</h2>
-                  <p className="mt-1 text-sm text-muted-theme">Attualmente stiamo lavorando su questa nuova funzione.</p>
+                  <p className="mt-1 text-sm text-muted-theme">Scegli cosa vuoi ricevere.</p>
                 </div>
                 <button
                   type="button"
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
-                  onClick={() => setNotifOpen(false)}
+                  onClick={() => {
+                    setNotifOpen(false);
+                    clearSettingsPanel();
+                  }}
                   title="Chiudi"
                   aria-label="Chiudi notifiche"
                 >
                   ✕
                 </button>
               </div>
+
+              {notifPrefsError ? (
+                <p className="mt-4 text-sm text-red-600">{notifPrefsError}</p>
+              ) : null}
+
+              {notifPrefsLoading ? (
+                <p className="mt-4 text-sm text-muted-theme">Caricamento...</p>
+              ) : (
+                <form className="mt-4 space-y-3" onSubmit={saveNotificationPrefs}>
+                  <label className="flex items-center justify-between gap-4 rounded-md border border-theme bg-panel-theme p-3">
+                    <span>
+                      <span className="block font-medium text-base-theme">Notifiche attive</span>
+                      <span className="mt-1 block text-xs text-muted-theme">Abilita o disabilita tutte le notifiche.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.enabled}
+                      onChange={(e) => updateNotifPref("enabled", e.target.checked)}
+                    />
+                  </label>
+
+                  <div className={notifPrefs.enabled ? "space-y-3" : "space-y-3 opacity-50"}>
+                    <label className="flex items-center justify-between gap-4 rounded-md border border-theme bg-panel-theme p-3">
+                      <span>
+                        <span className="block font-medium text-base-theme">Nuovi eventi</span>
+                        <span className="mt-1 block text-xs text-muted-theme">Quando lo staff crea un allenamento, partita o riunione.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={notifPrefs.event_created}
+                        disabled={!notifPrefs.enabled}
+                        onChange={(e) => updateNotifPref("event_created", e.target.checked)}
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between gap-4 rounded-md border border-theme bg-panel-theme p-3">
+                      <span>
+                        <span className="block font-medium text-base-theme">Convocazioni</span>
+                        <span className="mt-1 block text-xs text-muted-theme">Solo quando sei tra i giocatori convocati.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={notifPrefs.convocation}
+                        disabled={!notifPrefs.enabled}
+                        onChange={(e) => updateNotifPref("convocation", e.target.checked)}
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between gap-4 rounded-md border border-theme bg-panel-theme p-3">
+                      <span>
+                        <span className="block font-medium text-base-theme">Eventi modificati o cancellati</span>
+                        <span className="mt-1 block text-xs text-muted-theme">Solo se facevi parte di quell'evento.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={notifPrefs.event_changed}
+                        disabled={!notifPrefs.enabled}
+                        onChange={(e) => updateNotifPref("event_changed", e.target.checked)}
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between gap-4 rounded-md border border-theme bg-panel-theme p-3">
+                      <span>
+                        <span className="block font-medium text-base-theme">Documenti in scadenza</span>
+                        <span className="mt-1 block text-xs text-muted-theme">Promemoria quando un documento sta per scadere.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={notifPrefs.document_expiry}
+                        disabled={!notifPrefs.enabled}
+                        onChange={(e) => updateNotifPref("document_expiry", e.target.checked)}
+                      />
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                    disabled={notifPrefsSaving}
+                    style={{ opacity: notifPrefsSaving ? 0.6 : 1 }}
+                  >
+                    {notifPrefsSaving ? "Salvataggio..." : "Salva preferenze"}
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         </div>
@@ -1245,7 +1561,10 @@ export default function Page() {
             type="button"
             className="absolute inset-0 bg-black/50"
             aria-label="Chiudi"
-            onClick={() => setThemeOpen(false)}
+            onClick={() => {
+              setThemeOpen(false);
+              clearSettingsPanel();
+            }}
           />
           <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2">
             <div className="card p-6">
@@ -1257,7 +1576,10 @@ export default function Page() {
                 <button
                   type="button"
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
-                  onClick={() => setThemeOpen(false)}
+                  onClick={() => {
+                    setThemeOpen(false);
+                    clearSettingsPanel();
+                  }}
                   title="Chiudi"
                   aria-label="Chiudi tema"
                 >

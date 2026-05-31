@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import {
   ActiveClubOption,
@@ -36,6 +36,24 @@ const APP_NAV = [
   { href: "/impostazioni", label: "Impostazioni" },
 ];
 
+type NotificationItem = {
+  id: string;
+  title: string;
+  body: string | null;
+  audience: string;
+  created_at: string;
+  read: boolean;
+};
+
+function fmtDateTimeIT(iso: string) {
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
 export default function PublicHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -56,9 +74,14 @@ export default function PublicHeader() {
   const [userId, setUserId] = useState<string | null>(null);
   const [clubOptions, setClubOptions] = useState<ActiveClubOption[]>([]);
   const [activeClubId, setActiveClubId] = useState<string | null>(null);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
 
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const desktopMenuRef = useRef<HTMLDivElement | null>(null);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -136,8 +159,10 @@ export default function PublicHeader() {
 
       const inMobile = mobileMenuRef.current?.contains(target);
       const inDesktop = desktopMenuRef.current?.contains(target);
+      const inNotifications = notificationsRef.current?.contains(target);
 
       if (!inMobile && !inDesktop) setOpen(false);
+      if (!inNotifications) setNotificationOpen(false);
     }
 
     document.addEventListener("mousedown", onClickOutside);
@@ -153,8 +178,6 @@ export default function PublicHeader() {
     setOpen(false);
   }, [pathname]);
 
-  if (hideHeader) return null;
-
   const mobileItems = isAppSide ? APP_NAV : NAV;
   const desktopItems = isAppSide ? [] : NAV;
   const activeClub = clubOptions.find((option) => option.id === activeClubId);
@@ -162,6 +185,80 @@ export default function PublicHeader() {
   const logoUrl = activeClub ? getClubLogoUrl(activeClub) : FALLBACK_CLUB_LOGO;
   const websiteUrl = activeClub ? getClubWebsiteUrl(activeClub) : null;
   const canSwitchClub = isAppSide && isAuthed && clubOptions.length > 1;
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.read).length,
+    [notifications]
+  );
+
+  async function loadNotifications() {
+    if (!activeClubId || !isAuthed || !isAppSide) return;
+
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (!token) {
+      setNotificationsError("Sessione non valida.");
+      setNotificationsLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/notifications?club_id=${encodeURIComponent(activeClubId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setNotificationsError(json?.error ?? "Impossibile caricare le notifiche.");
+      setNotifications([]);
+      setNotificationsLoading(false);
+      return;
+    }
+
+    setNotifications((json.notifications ?? []) as NotificationItem[]);
+    setNotificationsLoading(false);
+  }
+
+  async function markNotificationsRead(ids: string[]) {
+    if (ids.length === 0) return;
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+
+    const res = await fetch("/api/notifications/read", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ notification_ids: ids }),
+    });
+
+    if (!res.ok) return;
+
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        ids.includes(notification.id) ? { ...notification, read: true } : notification
+      )
+    );
+  }
+
+  useEffect(() => {
+    if (!isAuthed || !isAppSide || !activeClubId) {
+      setNotifications([]);
+      return;
+    }
+
+    loadNotifications();
+    const interval = window.setInterval(loadNotifications, 30000);
+    return () => window.clearInterval(interval);
+  }, [activeClubId, isAuthed, isAppSide]);
+
+  if (hideHeader) return null;
 
   function switchClub(clubId: string) {
     if (!userId) return;
@@ -208,6 +305,95 @@ export default function PublicHeader() {
           )}
 
           <div className="flex items-center gap-2">
+            {isAppSide && isAuthed ? (
+              <div className="relative" ref={notificationsRef}>
+                <button
+                  type="button"
+                  className="relative h-9 w-9 rounded-md border border-white/20 bg-white/5 text-white hover:bg-white/10"
+                  aria-label="Notifiche"
+                  title="Notifiche"
+                  onClick={() => {
+                    setNotificationOpen((value) => !value);
+                    setOpen(false);
+                    loadNotifications();
+                  }}
+                >
+                  <span className="inline-flex h-full w-full items-center justify-center text-sm font-semibold">
+                    !
+                  </span>
+                  {unreadCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-500 px-1 text-center text-[10px] font-semibold text-white">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  ) : null}
+                </button>
+
+                {notificationOpen ? (
+                  <div className="absolute right-0 z-[75] mt-2 w-[84vw] max-w-sm overflow-hidden rounded-xl border border-white/15 bg-black/90 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">Notifiche</div>
+                        <div className="text-xs text-white/60">
+                          {unreadCount > 0 ? `${unreadCount} non lette` : "Tutto letto"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/90 hover:bg-white/10"
+                        onClick={() =>
+                          markNotificationsRead(
+                            notifications.filter((notification) => !notification.read).map((notification) => notification.id)
+                          )
+                        }
+                        disabled={unreadCount === 0}
+                        style={{ opacity: unreadCount === 0 ? 0.55 : 1 }}
+                      >
+                        Segna lette
+                      </button>
+                    </div>
+
+                    {notificationsError ? (
+                      <div className="px-4 py-3 text-sm text-red-200">{notificationsError}</div>
+                    ) : notificationsLoading ? (
+                      <div className="px-4 py-3 text-sm text-white/70">Caricamento...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-white/70">Nessuna notifica.</div>
+                    ) : (
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.slice(0, 12).map((notification) => (
+                          <button
+                            key={notification.id}
+                            type="button"
+                            className="block w-full border-b border-white/10 px-4 py-3 text-left hover:bg-white/10"
+                            onClick={() => markNotificationsRead([notification.id])}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className={notification.read ? "opacity-65" : ""}>
+                                <div className="text-sm font-medium text-white">
+                                  {notification.title}
+                                </div>
+                                {notification.body ? (
+                                  <div className="mt-1 text-xs leading-relaxed text-white/70">
+                                    {notification.body}
+                                  </div>
+                                ) : null}
+                                <div className="mt-2 text-[11px] text-white/45">
+                                  {fmtDateTimeIT(notification.created_at)}
+                                </div>
+                              </div>
+                              {!notification.read ? (
+                                <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-400" />
+                              ) : null}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* DESKTOP: invariato */}
             <div className="hidden md:block text-sm text-white/80 mr-2">
               {isAuthed ? (

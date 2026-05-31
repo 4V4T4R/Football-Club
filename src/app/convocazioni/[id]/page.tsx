@@ -7,6 +7,7 @@ import MapModal from "@/components/MapModal";
 
 type EventRow = {
   id: string;
+  club_id: string;
   title: string;
   start_at: string;
 
@@ -38,6 +39,7 @@ export default function ConvocazioneDetailPage() {
   // player
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerClubId, setPlayerClubId] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState("");
 
   // risposta (draft)
   const [status, setStatus] = useState<"yes" | "no" | null>(null);
@@ -97,7 +99,7 @@ export default function ConvocazioneDetailPage() {
     // player
     const { data: player, error: plErr } = await supabase
       .from("players")
-      .select("id, club_id")
+      .select("id, club_id, first_name, last_name")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -114,6 +116,7 @@ export default function ConvocazioneDetailPage() {
 
     setPlayerId(player.id);
     setPlayerClubId(player.club_id ?? null);
+    setPlayerName(`${player.first_name ?? ""} ${player.last_name ?? ""}`.trim());
 
     // verifica convocazione
     const { data: target, error: tgErr } = await supabase
@@ -138,7 +141,7 @@ export default function ConvocazioneDetailPage() {
     // evento (con coordinate se ci sono)
     const { data: evData, error: evErr } = await supabase
       .from("events")
-      .select("id, title, start_at, location, location_address, location_lat, location_lng")
+      .select("id, club_id, title, start_at, location, location_address, location_lat, location_lng")
       .eq("id", eventId)
       .single();
 
@@ -213,6 +216,30 @@ export default function ConvocazioneDetailPage() {
       setSaving(false);
       showToast("err", "Errore salvataggio");
       return;
+    }
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (token && event?.club_id) {
+      const responseLabel = status === "yes" ? "Presente" : "Assente";
+
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          club_id: event.club_id,
+          title: "Risposta convocazione",
+          body: `${playerName || "Un giocatore"} ha risposto: ${responseLabel} - ${event.title}`,
+          type: "convocation_response",
+          audience: "staff",
+          entity_type: "event",
+          entity_id: eventId,
+        }),
+      }).catch(() => null);
     }
 
     setSaving(false);
