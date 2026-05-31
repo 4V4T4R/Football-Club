@@ -24,6 +24,9 @@ type Suggestion = {
   placeId: string;
   mainText: string;
   secondaryText: string;
+  address?: string;
+  lat?: number | null;
+  lng?: number | null;
 };
 
 function useDebounced<T>(value: T, delay = 250) {
@@ -112,6 +115,9 @@ export default function PlaceAutocomplete({
           placeId: p.place_id,
           mainText: p.structured_formatting?.main_text ?? p.description ?? "",
           secondaryText: p.structured_formatting?.secondary_text ?? "",
+          address: p.formatted_address ?? p.description ?? "",
+          lat: typeof p.lat === "number" ? p.lat : null,
+          lng: typeof p.lng === "number" ? p.lng : null,
         }));
 
         setItems(mapped);
@@ -146,6 +152,23 @@ export default function PlaceAutocomplete({
       setLoading(true);
       setError(null);
 
+      if (typeof s.lat === "number" && typeof s.lng === "number" && s.address) {
+        onChange({
+          placeId: s.placeId,
+          address: s.address,
+          lat: s.lat,
+          lng: s.lng,
+        });
+
+        setQuery(s.address);
+        onInputChange?.(s.address);
+        setItems([]);
+        setOpen(false);
+        setLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 0);
+        return;
+      }
+
       const d = await fetchJSON<{
         placeId: string;
         address: string;
@@ -161,7 +184,7 @@ export default function PlaceAutocomplete({
       });
 
       setQuery(d.address);
-      //onInputChange?.(d.address);
+      onInputChange?.(d.address);
 
       setItems([]);
       setOpen(false);
