@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import MapModal from "@/components/MapModal";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type EventRow = {
   id: string;
@@ -94,22 +95,11 @@ export default function ConvocazioniPage() {
       return;
     }
 
-    const { data: member, error: mbErr } = await supabase
-      .from("club_members")
-      .select("club_id, role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (mbErr) {
-      setError(mbErr.message);
-      setLoading(false);
-      return;
-    }
-
-    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    const active = await resolveActiveClub(supabase, userId);
+    const staff = active.isStaff;
     setIsStaff(staff);
 
-    let clubId: string | null = member?.club_id ?? null;
+    let clubId: string | null = active.clubId;
     let player: PlayerRow | null = null;
 
     if (!clubId) {
@@ -154,6 +144,7 @@ export default function ConvocazioniPage() {
         .from("players")
         .select("id, club_id")
         .eq("user_id", userId)
+        .eq("club_id", clubId)
         .maybeSingle();
 
       if (pl2Err) {

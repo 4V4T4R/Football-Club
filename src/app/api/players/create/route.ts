@@ -13,7 +13,9 @@ export async function POST(req: Request) {
       shirt_number,
       role,
       phone,
-      matricola
+      matricola,
+      document_type,
+      document_number
     } = body;
 
     if (!club_id || !first_name || !last_name || !birth_date) {
@@ -83,6 +85,8 @@ export async function POST(req: Request) {
       phone: phone ?? null,
       matricola: matricola ?? null,
       active: true,
+      document_type: document_type ?? null,
+      document_number: document_number ?? null,
     });
 
     if (playerErr) {

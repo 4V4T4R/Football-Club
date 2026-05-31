@@ -4,6 +4,7 @@ import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type Club = { id: string; name: string; slug: string };
 
@@ -11,7 +12,7 @@ type StaffRow = {
   id: string;               // club_members.id
   user_id: string;
   club_id: string;
-  role: string;             // staff
+  role: string;             // staff, oppure admin con qualifica
   birth_date: string | null;
   title: string | null;     // qualifica
   first_name: string | null;
@@ -81,48 +82,19 @@ export default function StaffPage() {
 
     const { data: session } = await supabase.auth.getSession();
     const userId = session.session?.user?.id;
+    const token = session.session?.access_token;
 
-    if (!userId) {
+    if (!userId || !token) {
       setError("Utente non autenticato.");
       setLoading(false);
       return;
     }
 
-    // ruolo
-    const { data: membership } = await supabase
-      .from("club_members")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const roleValue = membership?.role ?? null;
+    const active = await resolveActiveClub(supabase, userId);
+    const roleValue = active.role;
     setRole(roleValue);
 
-    // club
-    const { data: member, error: memberErr } = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberErr) {
-      setError("Errore club_members: " + memberErr.message);
-      setLoading(false);
-      return;
-    }
-
-    let clubId: string | null = member?.club_id ?? null;
-
-    if (!clubId) {
-      // fallback player
-      const { data: p } = await supabase
-        .from("players")
-        .select("club_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      clubId = p?.club_id ?? null;
-    }
+    const clubId = active.clubId;
 
     if (!clubId) {
       setError("Impossibile determinare la squadra.");
@@ -144,47 +116,18 @@ export default function StaffPage() {
 
     setClub(clubData);
 
-    // staff list: SOLO role='staff' (admin nascosto)
-    const { data: cms, error: cmErr } = await supabase
-      .from("club_members")
-      .select("id, user_id, club_id, role, birth_date, title")
-      .eq("club_id", clubId)
-      .eq("role", "staff")
-      .order("created_at", { ascending: true });
+    const res = await fetch(`/api/staff/list?club_id=${encodeURIComponent(clubId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json().catch(() => ({}));
 
-    if (cmErr) {
-      setError(cmErr.message);
+    if (!res.ok) {
+      setError(json?.error ?? "Impossibile caricare lo staff.");
       setLoading(false);
       return;
     }
 
-    const userIds = (cms ?? []).map((x: any) => x.user_id).filter(Boolean);
-    let userMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
-
-    if (userIds.length > 0) {
-      const { data: us, error: uErr } = await supabase
-        .from("users")
-        .select("id, first_name, last_name")
-        .in("id", userIds);
-
-      if (uErr) {
-        setError(uErr.message);
-        setLoading(false);
-        return;
-      }
-
-      for (const u of us ?? []) {
-        userMap[(u as any).id] = { first_name: (u as any).first_name ?? null, last_name: (u as any).last_name ?? null };
-      }
-    }
-
-    const merged: StaffRow[] = (cms ?? []).map((cm: any) => ({
-      ...cm,
-      first_name: userMap[cm.user_id]?.first_name ?? null,
-      last_name: userMap[cm.user_id]?.last_name ?? null,
-    }));
-
-    setItems(merged);
+    setItems((json?.staff ?? []) as StaffRow[]);
     setLoading(false);
   }
 
@@ -462,7 +405,7 @@ export default function StaffPage() {
                           </div>
                         </div>
 
-                        {isAdmin && (
+                        {isAdmin && s.role === "staff" && (
                           <button
                             type="button"
                             data-actions-button
@@ -478,7 +421,7 @@ export default function StaffPage() {
                         )}
                       </div>
 
-                      {isAdmin && editing && (
+                      {isAdmin && s.role === "staff" && editing && (
                         <div className="mt-3 rounded-xl border border-theme bg-panel-theme p-3 space-y-3">
                           <div className="grid gap-3">
                             <div>
@@ -559,25 +502,27 @@ export default function StaffPage() {
 
                               {isAdmin && (
                                 <td className="px-3 py-2">
-                                  <div className="flex justify-center">
-                                    <button
-                                      type="button"
-                                      data-actions-button
-                                      className="h-8 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
-                                      title="Azioni"
-                                      ref={(el) => {
-                                        actionBtnRefs.current[s.id] = el;
-                                      }}
-                                      onClick={() => openActions(s.id)}
-                                    >
-                                      🖋️
-                                    </button>
-                                  </div>
+                                  {s.role === "staff" && (
+                                    <div className="flex justify-center">
+                                      <button
+                                        type="button"
+                                        data-actions-button
+                                        className="h-8 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
+                                        title="Azioni"
+                                        ref={(el) => {
+                                          actionBtnRefs.current[s.id] = el;
+                                        }}
+                                        onClick={() => openActions(s.id)}
+                                      >
+                                        🖋️
+                                      </button>
+                                    </div>
+                                  )}
                                 </td>
                               )}
                             </tr>
 
-                            {isAdmin && editing && (
+                            {isAdmin && s.role === "staff" && editing && (
                               <tr className="border-t border-theme">
                                 <td colSpan={4} className="px-3 py-3">
                                   <div className="rounded-xl border border-theme bg-panel-theme p-4 space-y-3">
@@ -637,7 +582,7 @@ export default function StaffPage() {
         !isMobile &&
         (() => {
           const s = items.find((x) => x.id === actionsOpenId);
-          if (!s) return null;
+          if (!s || s.role !== "staff") return null;
 
           return createPortal(
             <div
@@ -678,6 +623,7 @@ export default function StaffPage() {
       {isAdmin &&
         sheetOpenId &&
         currentActions &&
+        currentActions.role === "staff" &&
         typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[9999] md:hidden" data-actions-menu onPointerDown={(e) => e.stopPropagation()}>

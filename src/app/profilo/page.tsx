@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 export default function ProfileRedirect() {
   const router = useRouter();
@@ -17,11 +18,14 @@ export default function ProfileRedirect() {
         return;
       }
 
-      // controlla se è player
+      const active = await resolveActiveClub(supabase, userId);
+
+      // controlla se è player nella squadra attiva
       const { data: player } = await supabase
         .from("players")
         .select("id")
         .eq("user_id", userId)
+        .eq("club_id", active.clubId)
         .maybeSingle();
 
       if (player?.id) {
@@ -34,6 +38,7 @@ export default function ProfileRedirect() {
         .from("club_members")
         .select("id")
         .eq("user_id", userId)
+        .eq("club_id", active.clubId)
         .maybeSingle();
 
       if (member?.id) {

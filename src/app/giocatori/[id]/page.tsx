@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useRef } from "react";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 function roleBadge(role: string | null) {
   if (!role) return "bg-gray-500/20 text-gray-400";
@@ -53,6 +54,7 @@ function calculateAge(date: string | null) {
 
 type Player = {
   id: string;
+  club_id: string;
   first_name: string;
   last_name: string;
   birth_date: string | null;
@@ -60,7 +62,13 @@ type Player = {
   role: string | null;
   phone: string | null;
   matricola: string | null;
+
+  document_type: string | null;
+  document_number: string | null;
+  document_expiry: string | null;
+
   avatar_url: string | null;
+
   users: {
     email: string | null;
   } | null;
@@ -82,15 +90,8 @@ export default function PlayerProfile() {
 
       if (!userId) return;
 
-      // ruolo utente
-      const { data: member } = await supabase
-        .from("club_members")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      const role = member?.role ?? null;
-      const staff = role === "admin" || role === "staff";
+      const active = await resolveActiveClub(supabase, userId);
+      const staff = active.isStaff;
 
       setIsStaff(staff);
 
@@ -108,12 +109,18 @@ export default function PlayerProfile() {
 
       if (!data) return;
 
+      if (active.clubId && data.club_id !== active.clubId) {
+        window.location.href = "/";
+        return;
+      }
+
       // se è player controlliamo che sia il suo
       if (!staff) {
         const { data: me } = await supabase
           .from("players")
           .select("id")
           .eq("user_id", userId)
+          .eq("club_id", active.clubId)
           .maybeSingle();
 
         if (!me || me.id !== playerId) {
@@ -128,9 +135,45 @@ export default function PlayerProfile() {
     load();
   }, [playerId]);
 
+  function documentLabel(type: string | null) {
+    if (!type) return "—";
+
+    switch (type) {
+      case "carta_identita":
+        return "Carta d'identità";
+      case "patente":
+        return "Patente";
+      case "passaporto":
+        return "Passaporto";
+      default:
+        return type;
+    }
+  }
+
+  function documentStatus(expiry: string | null): "valido" | "scadenza" | "scaduto" | null {
+    if (!expiry) return null;
+
+    const today = new Date();
+    const exp = new Date(expiry);
+
+    const diff = (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (diff < 0) return "scaduto";
+    if (diff < 30) return "scadenza";
+    return "valido";
+  }
+
   async function uploadAvatar(e: any) {
     const file = e.target.files?.[0];
     if (!file || !player) return;
+
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+
+    if (!token) {
+      console.error("Sessione non valida.");
+      return;
+    }
 
     // comprime immagine
     const img = new Image();
@@ -192,12 +235,28 @@ export default function PlayerProfile() {
 
         const url = data.publicUrl;
 
-        await supabase
-          .from("players")
-          .update({ avatar_url: url })
-          .eq("id", player.id);
+        const res = await fetch("/api/players/avatar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            player_id: player.id,
+            avatar_url: url,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          await supabase.storage.from("avatars").remove([fileName]);
+          console.error(json?.error ?? "Errore aggiornamento avatar");
+          return;
+        }
 
         setPlayer({ ...player, avatar_url: url });
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }, "image/jpeg", 0.8);
     };
   }
@@ -205,6 +264,8 @@ export default function PlayerProfile() {
   if (!player) {
     return <div className="card p-8">Caricamento...</div>;
   }
+
+  const docStatus = documentStatus(player.document_expiry);
 
   return (
     <div className="space-y-6">
@@ -248,7 +309,7 @@ export default function PlayerProfile() {
                     player.role
                     )}`}
                 >
-                    {player.role ?? "—"}
+                      {player.role ?? "—"}
                 </span>
 
                 {player.shirt_number && (
@@ -273,6 +334,37 @@ export default function PlayerProfile() {
             <div>Nascita: {formatDateIT(player.birth_date)} ({calculateAge(player.birth_date)} anni)</div>
             <div>Email: {player.users?.email ?? "—"}</div>
             <div>Telefono: {player.phone ?? "—"}</div>
+            
+            <div className="pt-3 border-t border-theme">
+
+              <div className="text-xs text-muted-theme">
+                Documento
+              </div>
+
+              <div className="text-sm text-base-theme">
+                {documentLabel(player.document_type)} • {player.document_number ?? "—"}
+              </div>
+
+              <div className="text-xs text-muted-theme">
+                Scadenza {player.document_expiry ? formatDateIT(player.document_expiry) : "—"}
+
+
+                {docStatus === "valido" && (
+                  <span className="text-green-500"> (valido)</span>
+                )}
+
+                {docStatus === "scadenza" && (
+                  <span className="text-yellow-500"> (in scadenza)</span>
+                )}
+
+                {docStatus === "scaduto" && (
+                  <span className="text-red-500"> (scaduto)</span>
+                )}
+
+              </div>
+
+            </div>
+
           </div>
         </div>
 

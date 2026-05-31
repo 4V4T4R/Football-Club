@@ -5,6 +5,9 @@ import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 function formatDateIT(date: string) {
   if (!date) return "—";
@@ -31,6 +34,7 @@ type Player = {
 };
 
 type MenuPos = { top: number; left: number };
+type ActiveFilter = "all" | "active" | "inactive";
 
 function roleBadge(role: string | null) {
   if (!role) return "bg-gray-500/20 text-gray-400";
@@ -55,6 +59,9 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
 
   // add modal
   const [addOpen, setAddOpen] = useState(false);
@@ -85,11 +92,31 @@ export default function PlayersPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState<string>("");
+  const [documentType, setDocumentType] = useState("");
+  const [documentNumber, setDocumentNumber] = useState("");
+  const [documentExpiry, setDocumentExpiry] = useState("");
 
   // refs per bottone azioni
   const actionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const isStaff = useMemo(() => role === "admin" || role === "staff", [role]);
+  const router = useRouter();
+
+  const filteredPlayers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+
+    return players.filter((p) => {
+      const fullName = `${p.last_name} ${p.first_name}`.toLowerCase();
+      const matchesSearch = !q || fullName.includes(q);
+      const matchesRole = !roleFilter || p.role === roleFilter;
+      const matchesActive =
+        activeFilter === "all" ||
+        (activeFilter === "active" && p.active) ||
+        (activeFilter === "inactive" && !p.active);
+
+      return matchesSearch && matchesRole && matchesActive;
+    });
+  }, [players, searchTerm, roleFilter, activeFilter]);
 
   const canSubmit = useMemo(() => {
     return firstName.trim() && lastName.trim() && birthDate;
@@ -110,26 +137,17 @@ export default function PlayersPage() {
     const { data: session } = await supabase.auth.getSession();
     const userId = session.session?.user?.id;
 
-    let roleValue: string | null = null;
-
-    if (userId) {
-      const { data: membership } = await supabase
-        .from("club_members")
-        .select("role")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      roleValue = membership?.role ?? null;
-      setRole(roleValue);
-    }
-
-    const isStaffLocal = roleValue === "admin" || roleValue === "staff";
-
     if (!userId) {
       setError("Utente non autenticato.");
       setLoading(false);
       return;
     }
+
+    const active = await resolveActiveClub(supabase, userId);
+    const roleValue = active.role;
+    setRole(roleValue);
+
+    const isStaffLocal = roleValue === "admin" || roleValue === "staff";
 
     // Nome mostrato in UI: prova players (nome/cognome), poi metadata, poi email
     // Nome mostrato in UI:
@@ -166,37 +184,7 @@ export default function PlayersPage() {
 
     setDisplayName(staffName || playerName || metaName || emailName || "");
 
-    const { data: member, error: memberErr } = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberErr) {
-      setError("Errore club_members: " + memberErr.message);
-      setLoading(false);
-      return;
-    }
-
-    let clubId: string | null = null;
-
-    if (member?.club_id) {
-      clubId = member.club_id;
-    } else {
-      const { data: player, error: playerErr } = await supabase
-        .from("players")
-        .select("club_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (playerErr) {
-        setError("Errore players: " + playerErr.message);
-        setLoading(false);
-        return;
-      }
-
-      if (player?.club_id) clubId = player.club_id;
-    }
+    const clubId = active.clubId;
 
     if (!clubId) {
       setError("Impossibile determinare la squadra.");
@@ -478,12 +466,33 @@ export default function PlayersPage() {
   }
 
   async function addPlayer(e: React.FormEvent) {
-    e.preventDefault();
-    if (!club || !canSubmit) return;
+    e.preventDefault(); // ✅ SEMPRE per primo
 
     setError(null);
 
+    // campi obbligatori base
+    if (!firstName.trim() || !lastName.trim() || !birthDate) {
+      setError("Compila tutti i campi obbligatori.");
+      return;
+    }
+
+    // validazione documento
+    if (documentType) {
+      if (!documentNumber.trim()) {
+        setError("Numero documento obbligatorio.");
+        return;
+      }
+
+      if (!documentExpiry) {
+        setError("Data di scadenza obbligatoria.");
+        return;
+      }
+    }
+
+    if (!club || !canSubmit) return;
+
     const shirt = shirtNumber.trim() ? Number(shirtNumber) : null;
+
     if (shirtNumber.trim() && Number.isNaN(shirt)) {
       setError("Numero maglia non valido.");
       return;
@@ -498,10 +507,13 @@ export default function PlayersPage() {
         last_name: lastName.trim(),
         email: email.trim() || null,
         birth_date: birthDate || null,
-        shirt_number: shirt ? shirt : null,
+        shirt_number: shirt,
         role: rolePlayer || null,
         phone: phone || null,
         matricola: matricola || null,
+        document_type: documentType || null,
+        document_number: documentNumber || null,
+        document_expiry: documentExpiry || null,
       }),
     });
 
@@ -512,6 +524,7 @@ export default function PlayersPage() {
       return;
     }
 
+    // reset
     setFirstName("");
     setLastName("");
     setBirthDate("");
@@ -520,16 +533,15 @@ export default function PlayersPage() {
     setRolePlayer("");
     setPhone("");
     setMatricola("");
+    setDocumentType("");
+    setDocumentNumber("");
+    setDocumentExpiry("");
 
-    // chiudi popup
-    setAddOpen(false);
+    setAddOpen(false); // ✅ ORA corretto
 
-    // messaggio conferma
     setSuccess("Giocatore aggiunto correttamente ✅");
 
-    setTimeout(() => {
-      setSuccess(null);
-    }, 3000);
+    setTimeout(() => setSuccess(null), 3000);
 
     await loadClubAndPlayers();
   }
@@ -582,20 +594,67 @@ export default function PlayersPage() {
                 type="button"
                 className="h-10 w-10 rounded-md border border-theme bg-panel-theme flex items-center justify-center text-lg"
                 title="Aggiungi giocatore"
-                onClick={() => setAddOpen(true)}
+                aria-label="Aggiungi giocatore"
+                onClick={() => {
+                if (window.innerWidth < 768) {
+                  router.push("/giocatori/nuovo");
+                } else {
+                  setAddOpen(true);
+                }
+              }}
               >
                 +
               </button>
             )}
           </div>
 
+          {players.length > 0 && (
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_160px]">
+              <input
+                className={inputClass}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cerca giocatore"
+                aria-label="Cerca giocatore"
+              />
+
+              <select
+                className={inputClass}
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                aria-label="Filtra per ruolo"
+              >
+                <option value="">Tutti i ruoli</option>
+                <option value="POR">Portieri</option>
+                <option value="DC">Difensori</option>
+                <option value="CC">Centrocampisti</option>
+                <option value="ATT">Attaccanti</option>
+              </select>
+
+              {isStaff ? (
+                <select
+                  className={inputClass}
+                  value={activeFilter}
+                  onChange={(e) => setActiveFilter(e.target.value as ActiveFilter)}
+                  aria-label="Filtra per stato"
+                >
+                  <option value="all">Tutti</option>
+                  <option value="active">Attivi</option>
+                  <option value="inactive">Non attivi</option>
+                </select>
+              ) : null}
+            </div>
+          )}
+
           {players.length === 0 ? (
             <p className="mt-4 text-muted-theme">Nessun giocatore inserito.</p>
+          ) : filteredPlayers.length === 0 ? (
+            <p className="mt-4 text-muted-theme">Nessun giocatore corrisponde ai filtri.</p>
           ) : (
             <>
               {/* MOBILE LIST */}
               <div className="mt-4 md:hidden space-y-2">
-                {players.map((p) => {
+                {filteredPlayers.map((p) => {
                   const editing = editingId === p.id;
 
                   return (
@@ -639,6 +698,7 @@ export default function PlayersPage() {
                             data-actions-button
                             className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                             title="Azioni"
+                            aria-label={`Azioni per ${p.last_name} ${p.first_name}`}
                             ref={(el) => {
                               actionBtnRefs.current[p.id] = el;
                             }}
@@ -782,7 +842,7 @@ export default function PlayersPage() {
                     </thead>
 
                     <tbody>
-                      {players.map((p) => {
+                      {filteredPlayers.map((p) => {
                         const editing = editingId === p.id;
 
                         return (
@@ -839,6 +899,7 @@ export default function PlayersPage() {
                                         data-actions-button
                                         className="h-8 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                                         title="Azioni"
+                                        aria-label={`Azioni per ${p.last_name} ${p.first_name}`}
                                         ref={(el) => {
                                           actionBtnRefs.current[p.id] = el;
                                         }}
@@ -1084,8 +1145,9 @@ export default function PlayersPage() {
                     className="h-9 w-9 shrink-0 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                     onClick={closeAllActions}
                     title="Chiudi"
+                    aria-label="Chiudi azioni giocatore"
                   >
-                    ✖️
+                    ✕
                   </button>
                 </div>
 
@@ -1160,83 +1222,122 @@ export default function PlayersPage() {
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                   onClick={() => setAddOpen(false)}
                   title="Chiudi"
+                  aria-label="Chiudi aggiunta giocatore"
                 >
-                  ✖️
+                  ✕
                 </button>
               </div>
 
-              <form className="mt-4 space-y-3" onSubmit={addPlayer}>
-                <input
-                  className={inputClass}
-                  placeholder="Nome"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                />
-                <input
-                  className={inputClass}
-                  placeholder="Cognome"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                />
-                <input
-                  className={inputClass}
-                  placeholder="Email (opzionale)"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                <div>
-                  <label className="mb-1 block text-xs text-muted-theme">Data di nascita</label>
+              <form
+                className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4"
+                onSubmit={addPlayer}
+              >
+
+                {/* Nome */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Nome *</label>
+                  <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                </div>
+
+                {/* Cognome */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Cognome *</label>
+                  <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                </div>
+
+                {/* Email */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Email (opzionale)</label>
+                  <input className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+
+                {/* Telefono */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Telefono</label>
+                  <input className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </div>
+
+                {/* Data nascita */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Data di nascita *</label>
+                  <input type="date" className={inputClass} value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+                </div>
+
+                {/* Documento */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Documento</label>
+                  <select className={inputClass} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+                    <option value="">Seleziona</option>
+                    <option value="carta_identita">Carta d'identità</option>
+                    <option value="patente">Patente</option>
+                    <option value="passaporto">Passaporto</option>
+                  </select>
+                </div>
+
+                {/* Numero documento */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Numero documento</label>
+                  <input
+                    className={inputClass}
+                    value={documentNumber}
+                    onChange={(e) => setDocumentNumber(e.target.value)}
+                    disabled={!documentType}
+                  />
+                </div>
+
+                {/* Scadenza */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Scadenza documento</label>
                   <input
                     type="date"
                     className={inputClass}
-                    value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
+                    value={documentExpiry}
+                    onChange={(e) => setDocumentExpiry(e.target.value)}
+                    disabled={!documentType}
                   />
                 </div>
-                <input
-                  className={inputClass}
-                  placeholder="Numero maglia (opzionale)"
-                  value={shirtNumber}
-                  onChange={(e) => setShirtNumber(e.target.value)}
-                />
-                <select
-                  className={inputClass}
-                  value={rolePlayer}
-                  onChange={(e) => setRolePlayer(e.target.value)}
-                >
-                  <option value="">Ruolo</option>
-                  <option value="POR">Portiere</option>
-                  <option value="DC">Difensore</option>
-                  <option value="CC">Centrocampista</option>
-                  <option value="ATT">Attaccante</option>
-                </select>
+                {/* Numero maglia */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Numero maglia</label>
+                  <input className={inputClass} value={shirtNumber} onChange={(e) => setShirtNumber(e.target.value)} />
+                </div>
 
-                <input
-                  className={inputClass}
-                  placeholder="Telefono"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
+                {/* Ruolo */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-theme">Ruolo</label>
+                  <select className={inputClass} value={rolePlayer} onChange={(e) => setRolePlayer(e.target.value)}>
+                    <option value="">Seleziona</option>
+                    <option value="POR">Portiere</option>
+                    <option value="DC">Difensore</option>
+                    <option value="CC">Centrocampista</option>
+                    <option value="ATT">Attaccante</option>
+                  </select>
+                </div>
 
-                <input
-                  className={inputClass}
-                  placeholder="Matricola"
-                  value={matricola}
-                  onChange={(e) => setMatricola(e.target.value)}
-                />
+                {/* Matricola */}
+                <div className="flex flex-col gap-1 md:col-span-2">
+                  <label className="text-xs text-muted-theme">Matricola</label>
+                  <input className={inputClass} value={matricola} onChange={(e) => setMatricola(e.target.value)} />
+                </div>
 
+                {/* Bottone */}
                 <button
-                  className="w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
+                  className="md:col-span-2 w-full rounded-md border border-theme bg-panel-theme px-4 py-2 text-sm"
                   disabled={!canSubmit}
-                  style={{ opacity: canSubmit ? 1 : 0.6 }}
                 >
                   Aggiungi
                 </button>
+
               </form>
 
               <p className="mt-3 text-xs text-muted-theme">
-                Disattiva un giocatore invece di eliminarlo: mantiene storico e presenze.
+                * Campi obbligatori
               </p>
+              {error && (
+                <p className="text-sm text-red-500 mt-2">
+                  {error}
+                </p>
+              )}
             </div>
           </div>
         </div>

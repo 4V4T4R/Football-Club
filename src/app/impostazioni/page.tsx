@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { setThemePref } from "@/components/ThemeClient";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type Club = { id: string; name: string; slug: string };
 
@@ -194,10 +195,13 @@ export default function Page() {
     setEditFirst(u?.first_name ?? "");
     setEditLast(u?.last_name ?? "");
 
+    const active = await resolveActiveClub(supabase, userId);
+
     const { data: m, error: mErr } = await supabase
       .from("club_members")
       .select("club_id, role, created_at, birth_date")
       .eq("user_id", userId)
+      .eq("club_id", active.clubId)
       .maybeSingle();
 
     if (mErr) {
@@ -213,6 +217,7 @@ export default function Page() {
       .from("players")
       .select("id, club_id, first_name, last_name, birth_date, shirt_number, user_id, active, created_at")
       .eq("user_id", userId)
+      .eq("club_id", active.clubId)
       .maybeSingle();
 
     if (pErr) {
@@ -223,10 +228,7 @@ export default function Page() {
 
     setPlayer((p as PlayerRow | null) ?? null);
 
-    const clubId =
-      (m?.club_id as string | undefined) ??
-      (p?.club_id as string | undefined) ??
-      null;
+    const clubId = active.clubId ?? (m?.club_id as string | undefined) ?? (p?.club_id as string | undefined) ?? null;
 
     if (clubId) {
       const { data: c, error: cErr } = await supabase
@@ -300,7 +302,8 @@ export default function Page() {
       const { error: updMemberErr } = await supabase
         .from("club_members")
         .update({ birth_date: birth })
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .eq("club_id", member?.club_id);
 
       if (updMemberErr) {
         setError(updMemberErr.message);
@@ -668,20 +671,15 @@ export default function Page() {
           </div>
         </div>
 
-        {/* IN ARRIVO (come tuo) */}
+        {/* IN ARRIVO */}
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-base-theme">In arrivo</h2>
           <ul className="mt-3 space-y-2 text-sm text-muted-theme">
-            <li>• Notifiche (solo admin per regole globali)...</li>
-            <li>• Privacy (consensi, export dati, gestione allegati)...</li>
-            <li>• Gestione membri (aggiungi staff, disattiva/gestisci giocatori)✅</li>
-            <li>• Tema app per utente ✅</li>
+            <li>• Notifiche avanzate per staff e giocatori</li>
+            <li>• Privacy, consensi ed esportazione dati</li>
+            <li>• Gestione completa dei membri</li>
+            <li>• Preferenze account sincronizzate</li>
           </ul>
-
-          <p className="mt-4 text-xs text-muted-theme">
-            Nota per Raffaele: dopo un mese questo è già una base semifunzionante, ci vorra del altro tempo per testarla e
-            perfezionarla 🥲.
-          </p>
         </div>
       </div>
 
@@ -708,8 +706,9 @@ export default function Page() {
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                   onClick={() => setPwdOpen(false)}
                   title="Chiudi"
+                  aria-label="Chiudi password"
                 >
-                  ✖️
+                  ✕
                 </button>
               </div>
 
@@ -740,6 +739,7 @@ export default function Page() {
                       onClick={() => setShowOld((v) => !v)}
                       disabled={savingPwd}
                       title={showOld ? "Nascondi" : "Mostra"}
+                      aria-label={showOld ? "Nascondi password attuale" : "Mostra password attuale"}
                     >
                       {showOld ? "🙈" : "👁️"}
                     </button>
@@ -763,6 +763,7 @@ export default function Page() {
                       onClick={() => setShowNew((v) => !v)}
                       disabled={savingPwd}
                       title={showNew ? "Nascondi" : "Mostra"}
+                      aria-label={showNew ? "Nascondi nuova password" : "Mostra nuova password"}
                     >
                       {showNew ? "🙈" : "👁️"}
                     </button>
@@ -801,6 +802,7 @@ export default function Page() {
                       onClick={() => setShowConfirm((v) => !v)}
                       disabled={savingPwd}
                       title={showConfirm ? "Nascondi" : "Mostra"}
+                      aria-label={showConfirm ? "Nascondi conferma password" : "Mostra conferma password"}
                     >
                       {showConfirm ? "🙈" : "👁️"}
                     </button>
@@ -859,8 +861,9 @@ export default function Page() {
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                   onClick={() => setNotifOpen(false)}
                   title="Chiudi"
+                  aria-label="Chiudi notifiche"
                 >
-                  ✖️
+                  ✕
                 </button>
               </div>
             </div>
@@ -889,8 +892,9 @@ export default function Page() {
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                   onClick={() => setThemeOpen(false)}
                   title="Chiudi"
+                  aria-label="Chiudi tema"
                 >
-                  ✖️
+                  ✕
                 </button>
               </div>
 

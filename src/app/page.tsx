@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type EventType = "training" | "match" | "meeting";
 
@@ -48,6 +49,11 @@ export default function Page() {
 
   const [weekEvents, setWeekEvents] = useState<WeekEvent[]>([]);
 
+  const [docsExpired, setDocsExpired] = useState<number | null>(null);
+  const [docsExpiring, setDocsExpiring] = useState<number | null>(null);
+  const [docsExpanded, setDocsExpanded] = useState(false);
+  const [docsPlayers, setDocsPlayers] = useState<any[]>([]);
+
   async function resolveMe() {
     const { data: session } = await supabase.auth.getSession();
     const user = session.session?.user;
@@ -81,26 +87,14 @@ export default function Page() {
       name = email.includes("@") ? email.split("@")[0] : "";
     }
 
-    // 1) prova staff
-    const { data: member, error: memberErr } = await supabase
-      .from("club_members")
-      .select("club_id, role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberErr) throw new Error(memberErr.message);
-
-    const staff = ["admin", "staff"].includes(member?.role ?? "");
-
-    if (member?.club_id) {
-      return { userId, clubId: member.club_id, staff, name };
-    }
+    const active = await resolveActiveClub(supabase, userId);
 
     // 2) prova player (e se ha nome/cognome in players, quello vince)
     const { data: player, error: playerErr } = await supabase
       .from("players")
       .select("id, club_id, first_name, last_name")
       .eq("user_id", userId)
+      .eq("club_id", active.clubId)
       .maybeSingle();
 
     if (playerErr) throw new Error(playerErr.message);
@@ -112,10 +106,32 @@ export default function Page() {
 
     return {
       userId,
-      clubId: player?.club_id ?? null,
-      staff: false,
+      clubId: active.clubId ?? player?.club_id ?? null,
+      staff: active.isStaff,
       name,
     };
+  }
+
+  async function loadDocumentsPlayers() {
+
+    const me = await resolveMe();
+    if (!me.clubId) return;
+
+    const today = new Date().toISOString().slice(0,10);
+    const in30 = new Date(Date.now() + 30*24*60*60*1000)
+      .toISOString()
+      .slice(0,10);
+
+    const { data } = await supabase
+      .from("players")
+      .select("id, first_name, last_name, document_type, document_expiry")
+      .eq("club_id", me.clubId)
+      .eq("active", true)
+      .not("document_expiry","is",null)
+      .lte("document_expiry", in30)
+      .order("document_expiry", { ascending: true });
+
+    setDocsPlayers(data ?? []);
   }
 
   async function loadDashboard() {
@@ -138,6 +154,43 @@ export default function Page() {
         setError("Impossibile determinare la squadra.");
         setLoading(false);
         return;
+      }
+
+      // =====================
+      // DOCUMENTI GIOCATORI
+      // =====================
+
+      if (me.staff) {
+
+        const today = new Date().toISOString().slice(0, 10);
+
+        const in30 = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString().slice(0, 10);
+
+        // documenti scaduti
+        const { count: expiredCount, error: expiredErr } = await supabase
+          .from("players")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", me.clubId)
+          .eq("active", true)
+          .lt("document_expiry", today);
+
+        if (expiredErr) throw new Error(expiredErr.message);
+
+        // documenti in scadenza
+        const { count: expiringCount, error: expiringErr } = await supabase
+          .from("players")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", me.clubId)
+          .eq("active", true)
+          .gte("document_expiry", today)
+          .lte("document_expiry", in30);
+
+        if (expiringErr) throw new Error(expiringErr.message);
+
+        setDocsExpired(expiredCount ?? 0);
+        setDocsExpiring(expiringCount ?? 0);
       }
 
       // 👥 giocatori attivi
@@ -263,8 +316,14 @@ export default function Page() {
   return (
       <div className="space-y-6">
         <div className="card p-8">
-          <h1 className="text-3xl font-semibold text-base-theme">
-            Benvenuto{displayName ? " " + displayName : ""} 👋
+          <h1 className="text-2xl font-semibold text-base-theme sm:text-3xl">
+            <span>Benvenuto</span>
+            {displayName ? (
+              <span className="block sm:inline"> {displayName}</span>
+            ) : null}{" "}
+            <span className="inline-block" aria-hidden="true">
+              👋
+            </span>
           </h1>
 
           <p className="mt-3 text-muted-theme">
@@ -333,6 +392,108 @@ export default function Page() {
             </div>
           </div>
         </div>
+
+        {isStaff && (
+          <div className="card p-6">
+            <h2 className="text-lg font-semibold text-base-theme">
+              Avvisi importanti
+            </h2>
+
+            <div className="mt-3 space-y-2 text-sm">
+
+              {docsExpired !== null && docsExpired > 0 && (
+                <div
+                  onClick={async () => {
+                    if (!docsExpanded) {
+                      await loadDocumentsPlayers();
+                    }
+                    setDocsExpanded(!docsExpanded);
+                  }}
+                  className="text-red-500 cursor-pointer hover:underline"
+                >
+                  ⚠️ {docsExpired ?? 0} documento{(docsExpired ?? 0) > 1 ? "i" : ""} scadut{(docsExpired ?? 0) > 1 ? "i" : "o"}
+                </div>
+              )}
+
+              {docsExpiring !== null && docsExpiring > 0 && (
+                <div
+                  onClick={async () => {
+                    if (!docsExpanded) {
+                      await loadDocumentsPlayers();
+                    }
+                    setDocsExpanded(!docsExpanded);
+                  }}
+                  className="text-yellow-500 cursor-pointer hover:underline"
+                >
+                  ⚠️ {docsExpiring ?? 0} documento{(docsExpiring ?? 0) > 1 ? "i" : ""} in scadenza
+                </div>
+              )}
+
+              {(docsExpired ?? 0) === 0 && (docsExpiring ?? 0) === 0 && (
+                <div className="text-muted-theme">
+                  Nessun avviso importante al momento
+                </div>
+              )}
+
+              {docsExpanded && (
+
+                <div className="mt-4 space-y-2">
+
+                  {docsPlayers.map((p) => {
+
+                    const today = new Date();
+                    const exp = new Date(p.document_expiry);
+
+                    const diff = (exp.getTime() - today.getTime()) / (1000*60*60*24);
+
+                    let status = "";
+                    let color = "";
+
+                    if (diff < 0) {
+                      status = "scaduto";
+                      color = "text-red-500";
+                    } else if (diff < 30) {
+                      status = "in scadenza";
+                      color = "text-yellow-500";
+                    }
+
+                    return (
+
+                      <div
+                        key={p.id}
+                        onClick={() => router.push("/giocatori/" + p.id)}
+                        className="rounded-xl border border-theme bg-panel-theme p-3 cursor-pointer hover:opacity-90"
+                      >
+
+                        <div className="flex justify-between">
+
+                          <div className="font-medium text-base-theme">
+                            {p.last_name} {p.first_name}
+                          </div>
+
+                          <div className={`text-xs ${color}`}>
+                            {status}
+                          </div>
+
+                        </div>
+
+                        <div className="text-xs text-muted-theme mt-1">
+                          {p.document_type ?? "Documento"} • {fmtDateTimeIT(p.document_expiry)}
+                        </div>
+
+                      </div>
+
+                    );
+
+                  })}
+
+                </div>
+
+              )}
+
+            </div>
+          </div>
+        )}
 
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-base-theme">{weekTitle}</h2>

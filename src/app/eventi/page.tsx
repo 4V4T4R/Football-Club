@@ -6,6 +6,7 @@ import Link from "next/link";
 import MonthCalendar, { CalendarEvent } from "@/components/MonthCalendar";
 import PlaceAutocomplete, { PlaceValue } from "@/components/PlaceAutocomplete";
 import MapModal from "@/components/MapModal";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type Club = { id: string; name: string; slug: string };
 type EventType = "training" | "match" | "meeting";
@@ -119,40 +120,10 @@ export default function EventsPage() {
       return;
     }
 
-    let clubId: string | null = null;
-
-    const { data: member, error: memberErr } = await supabase
-      .from("club_members")
-      .select("club_id, role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberErr) {
-      setError("Errore club_members: " + memberErr.message);
-      setLoading(false);
-      return;
-    }
-
-    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    const active = await resolveActiveClub(supabase, userId);
+    const clubId = active.clubId;
+    const staff = active.isStaff;
     setIsStaff(staff);
-
-    if (member?.club_id) {
-      clubId = member.club_id;
-    } else {
-      const { data: player, error: playerErr } = await supabase
-        .from("players")
-        .select("club_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (playerErr) {
-        setError("Errore players: " + playerErr.message);
-        setLoading(false);
-        return;
-      }
-
-      if (player?.club_id) clubId = player.club_id;
-    }
 
     if (!clubId) {
       setError("Impossibile determinare la squadra.");
@@ -277,6 +248,7 @@ export default function EventsPage() {
             type="button"
             className="h-10 w-10 rounded-md border border-theme bg-panel-theme flex items-center justify-center text-lg"
             title="Crea evento"
+            aria-label="Crea evento"
             onClick={() => setCreateOpen(true)}
           >
             +
@@ -355,6 +327,7 @@ export default function EventsPage() {
                             className="underline underline-offset-4 hover:opacity-90"
                             onClick={() => openMapForEvent(ev)}
                             title="Apri mappa"
+                            aria-label={`Apri mappa per ${ev.title}`}
                           >
                             {addr}
                           </button>
@@ -459,8 +432,9 @@ export default function EventsPage() {
                   className="h-9 w-9 rounded-md border border-theme bg-panel-theme flex items-center justify-center"
                   onClick={() => setCreateOpen(false)}
                   title="Chiudi"
+                  aria-label="Chiudi creazione evento"
                 >
-                  ✖️
+                  ✕
                 </button>
               </div>
 

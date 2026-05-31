@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
+import { resolveActiveClub } from "@/lib/activeClub";
 
 type EventRow = {
   id: string;
@@ -90,19 +91,8 @@ export default function EventResponsesPage() {
       return;
     }
 
-    const { data: member, error: mbErr } = await supabase
-      .from("club_members")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (mbErr) {
-      setError(mbErr.message);
-      setLoading(false);
-      return;
-    }
-
-    const staff = ["admin", "staff"].includes(member?.role ?? "");
+    const active = await resolveActiveClub(supabase, userId);
+    const staff = active.isStaff;
     setIsStaff(staff);
 
     const { data: evData, error: evErr } = await supabase
@@ -113,6 +103,12 @@ export default function EventResponsesPage() {
 
     if (evErr || !evData) {
       setError("Evento non trovato o permessi insufficienti.");
+      setLoading(false);
+      return;
+    }
+
+    if (active.clubId && evData.club_id !== active.clubId) {
+      setError("Questo evento appartiene a un'altra squadra.");
       setLoading(false);
       return;
     }

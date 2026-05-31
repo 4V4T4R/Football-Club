@@ -21,38 +21,57 @@ export async function GET(req: Request) {
     if (uErr || !u?.user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
 
     const uid = u.user.id;
+    const requestedClubId = new URL(req.url).searchParams.get("club_id");
 
-    // club_id: prima club_members, poi players
-    const { data: meMember } = await supabaseAdmin
+    const { data: membershipRows, error: memberErr } = await supabaseAdmin
       .from("club_members")
       .select("club_id, role")
       .eq("user_id", uid)
-      .maybeSingle();
+      .order("created_at", { ascending: true });
 
-    let clubId: string | null = meMember?.club_id ?? null;
+    if (memberErr) return NextResponse.json({ error: memberErr.message }, { status: 500 });
 
-    if (!clubId) {
-      const { data: mePlayer } = await supabaseAdmin
-        .from("players")
-        .select("club_id")
-        .eq("user_id", uid)
-        .maybeSingle();
-      clubId = mePlayer?.club_id ?? null;
+    const { data: playerRows, error: playerErr } = await supabaseAdmin
+      .from("players")
+      .select("club_id")
+      .eq("user_id", uid);
+
+    if (playerErr) return NextResponse.json({ error: playerErr.message }, { status: 500 });
+
+    const memberships = (membershipRows ?? []) as Array<{ club_id: string; role: string }>;
+    const playerClubs = (playerRows ?? []) as Array<{ club_id: string }>;
+    const allowedClubIds = new Set([
+      ...memberships.map((m) => m.club_id),
+      ...playerClubs.map((p) => p.club_id),
+    ]);
+
+    if (requestedClubId && !allowedClubIds.has(requestedClubId)) {
+      return NextResponse.json({ error: "Accesso non autorizzato al club." }, { status: 403 });
     }
+
+    const clubId: string | null =
+      requestedClubId ?? memberships[0]?.club_id ?? playerClubs[0]?.club_id ?? null;
 
     if (!clubId) return NextResponse.json({ error: "Club non trovato" }, { status: 400 });
 
-    // mostra SOLO role='staff' (admin escluso)
+    const meMember = memberships.find((m) => m.club_id === clubId) ?? null;
+
+    // Staff visibile: staff sempre, admin solo se hanno una qualifica operativa.
     const { data: staffRows, error: sErr } = await supabaseAdmin
       .from("club_members")
-      .select("user_id, birth_date, title, created_at")
+      .select("id, user_id, club_id, role, birth_date, title, created_at")
       .eq("club_id", clubId)
-      .eq("role", "staff")
+      .in("role", ["staff", "admin"])
       .order("created_at", { ascending: true });
 
     if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
 
-    const ids = (staffRows ?? []).map((r: any) => r.user_id).filter(Boolean);
+    const visibleRows = ((staffRows ?? []) as any[]).filter((row) => {
+      const hasTitle = Boolean((row.title ?? "").trim());
+      return row.role === "staff" || (row.role === "admin" && hasTitle);
+    });
+
+    const ids = visibleRows.map((r: any) => r.user_id).filter(Boolean);
     if (ids.length === 0) {
       return NextResponse.json({ club_id: clubId, staff: [], me_role: meMember?.role ?? null }, { status: 200 });
     }
@@ -66,10 +85,13 @@ export async function GET(req: Request) {
 
     const map = new Map((users ?? []).map((x: any) => [x.id, x]));
 
-    const out = (staffRows ?? []).map((r: any) => {
+    const out = visibleRows.map((r: any) => {
       const urow = map.get(r.user_id) ?? {};
       return {
+        id: r.id,
         user_id: r.user_id,
+        club_id: r.club_id,
+        role: r.role,
         first_name: urow.first_name ?? "",
         last_name: urow.last_name ?? "",
         birth_date: r.birth_date ?? null,
